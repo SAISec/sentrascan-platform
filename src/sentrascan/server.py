@@ -5,10 +5,14 @@ from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # ensure available for type annotations
+from sqlalchemy import func
+from datetime import datetime, timedelta
 from sentrascan.core.storage import init_db, SessionLocal
 from sentrascan.modules.model.scanner import ModelScanner
 from sentrascan.modules.mcp.scanner import MCPScanner
 from sentrascan.core.policy import PolicyEngine
+import csv
+import io
 
 app = FastAPI(title="SentraScan Platform")
 
@@ -306,6 +310,129 @@ def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db), 
         for r in rows
     ]
 
+@app.get("/api/v1/dashboard/stats")
+def dashboard_stats(api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None):
+    """Get dashboard statistics"""
+    q = db.query(Scan)
+    
+    # Apply filters
+    if type:
+        q = q.filter(Scan.scan_type == type)
+    if passed in ("true","false"):
+        q = q.filter(Scan.passed == (passed == "true"))
+    
+    # Apply time range filter
+    if time_range:
+        now = datetime.utcnow()
+        if time_range == "7d":
+            cutoff = now - timedelta(days=7)
+        elif time_range == "30d":
+            cutoff = now - timedelta(days=30)
+        elif time_range == "90d":
+            cutoff = now - timedelta(days=90)
+        else:
+            cutoff = None
+        if cutoff:
+            q = q.filter(Scan.created_at >= cutoff)
+    
+    total_scans = q.count()
+    passed_scans = q.filter(Scan.passed == True).count()
+    total_findings = q.with_entities(
+        func.sum(Scan.critical_count + Scan.high_count + Scan.medium_count + Scan.low_count)
+    ).scalar() or 0
+    critical_count = q.with_entities(func.sum(Scan.critical_count)).scalar() or 0
+    high_count = q.with_entities(func.sum(Scan.high_count)).scalar() or 0
+    medium_count = q.with_entities(func.sum(Scan.medium_count)).scalar() or 0
+    low_count = q.with_entities(func.sum(Scan.low_count)).scalar() or 0
+    
+    return {
+        "total_scans": total_scans,
+        "passed_scans": passed_scans,
+        "pass_rate": round((passed_scans / total_scans * 100) if total_scans > 0 else 0, 1),
+        "total_findings": int(total_findings),
+        "critical_count": int(critical_count),
+        "high_count": int(high_count),
+        "medium_count": int(medium_count),
+        "low_count": int(low_count),
+    }
+
+@app.get("/api/v1/dashboard/export")
+def dashboard_export(api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "json", type: str | None = None, passed: str | None = None, time_range: str | None = None):
+    """Export dashboard data as CSV or JSON"""
+    q = db.query(Scan)
+    
+    # Apply filters
+    if type:
+        q = q.filter(Scan.scan_type == type)
+    if passed in ("true","false"):
+        q = q.filter(Scan.passed == (passed == "true"))
+    
+    # Apply time range filter
+    if time_range:
+        now = datetime.utcnow()
+        if time_range == "7d":
+            cutoff = now - timedelta(days=7)
+        elif time_range == "30d":
+            cutoff = now - timedelta(days=30)
+        elif time_range == "90d":
+            cutoff = now - timedelta(days=90)
+        else:
+            cutoff = None
+        if cutoff:
+            q = q.filter(Scan.created_at >= cutoff)
+    
+    rows = q.order_by(Scan.created_at.desc()).all()
+    
+    if format.lower() == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Created At", "Type", "Target", "Passed", "Critical", "High", "Medium", "Low", "Total Findings"])
+        for r in rows:
+            writer.writerow([
+                r.id,
+                r.created_at.isoformat() if r.created_at else "",
+                r.scan_type,
+                r.target_path,
+                "Yes" if r.passed else "No",
+                r.critical_count or 0,
+                r.high_count or 0,
+                r.medium_count or 0,
+                r.low_count or 0,
+                (r.critical_count or 0) + (r.high_count or 0) + (r.medium_count or 0) + (r.low_count or 0)
+            ])
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=sentrascan-dashboard-export.csv"}
+        )
+    else:
+        # JSON format
+        return {
+            "exported_at": datetime.utcnow().isoformat(),
+            "filters": {
+                "type": type,
+                "passed": passed,
+                "time_range": time_range
+            },
+            "total_scans": len(rows),
+            "scans": [
+                {
+                    "id": r.id,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                    "type": r.scan_type,
+                    "target": r.target_path,
+                    "passed": bool(r.passed),
+                    "critical": r.critical_count or 0,
+                    "high": r.high_count or 0,
+                    "medium": r.medium_count or 0,
+                    "low": r.low_count or 0,
+                    "total_findings": (r.critical_count or 0) + (r.high_count or 0) + (r.medium_count or 0) + (r.low_count or 0)
+                }
+                for r in rows
+            ]
+        }
+
 @app.get("/api/v1/scans/{scan_id}")
 def get_scan(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
@@ -393,18 +520,72 @@ def ui_logout():
     return resp
 
 @app.get("/")
-def ui_home(request: Request, type: str | None = None, passed: str | None = None, page: int = 1):
+def ui_home(request: Request, type: str | None = None, passed: str | None = None, time_range: str | None = None, page: int = 1):
     db = next(get_db())
     q = db.query(Scan)
+    
+    # Apply filters
     if type:
         q = q.filter(Scan.scan_type == type)
     if passed in ("true","false"):
         q = q.filter(Scan.passed == (passed == "true"))
+    
+    # Apply time range filter
+    if time_range:
+        now = datetime.utcnow()
+        if time_range == "7d":
+            cutoff = now - timedelta(days=7)
+        elif time_range == "30d":
+            cutoff = now - timedelta(days=30)
+        elif time_range == "90d":
+            cutoff = now - timedelta(days=90)
+        else:
+            cutoff = None
+        if cutoff:
+            q = q.filter(Scan.created_at >= cutoff)
+    
     page = max(page, 1)
     page_size = 20
     total = q.count()
     rows = q.order_by(Scan.created_at.desc()).limit(page_size).offset((page-1)*page_size).all()
-    return templates.TemplateResponse("index.html", {"request": request, "scans": rows, "page": page, "has_next": (page*page_size) < total, "filters": {"type": type or "", "passed": passed or ""}})
+    
+    # Calculate statistics for dashboard
+    stats_q = db.query(Scan)
+    if type:
+        stats_q = stats_q.filter(Scan.scan_type == type)
+    if passed in ("true","false"):
+        stats_q = stats_q.filter(Scan.passed == (passed == "true"))
+    if time_range and cutoff:
+        stats_q = stats_q.filter(Scan.created_at >= cutoff)
+    
+    total_scans = stats_q.count()
+    passed_scans = stats_q.filter(Scan.passed == True).count()
+    total_findings = stats_q.with_entities(
+        func.sum(Scan.critical_count + Scan.high_count + Scan.medium_count + Scan.low_count)
+    ).scalar() or 0
+    critical_count = stats_q.with_entities(func.sum(Scan.critical_count)).scalar() or 0
+    high_count = stats_q.with_entities(func.sum(Scan.high_count)).scalar() or 0
+    medium_count = stats_q.with_entities(func.sum(Scan.medium_count)).scalar() or 0
+    low_count = stats_q.with_entities(func.sum(Scan.low_count)).scalar() or 0
+    
+    stats = {
+        "total_scans": total_scans,
+        "passed_scans": passed_scans,
+        "total_findings": int(total_findings),
+        "critical_count": int(critical_count),
+        "high_count": int(high_count),
+        "medium_count": int(medium_count),
+        "low_count": int(low_count),
+    }
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "scans": rows,
+        "page": page,
+        "has_next": (page*page_size) < total,
+        "filters": {"type": type or "", "passed": passed or "", "time_range": time_range or ""},
+        "stats": stats
+    })
 
 @app.get("/ui/scan")
 def ui_scan_form(request: Request):

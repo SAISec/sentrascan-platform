@@ -1,0 +1,52 @@
+{#
+  Statistics Card Component
+  
+  Usage:
+  {% include 'components/_stat_card.html' with context %}
+  
+  Parameters:
+  - title: Card title (required)
+  - value: Main value to display (required)
+  - description: Optional description text
+  - icon: Optional icon (emoji or text)
+  - icon_color: Optional icon background color (default: primary)
+  - link: Optional URL to link the card
+#}
+
+{% set icon_color = icon_color|default('primary') %}
+{% set icon_bg_colors = {
+  'primary': 'var(--color-primary)',
+  'success': 'var(--color-success)',
+  'error': 'var(--color-error)',
+  'warning': 'var(--color-warning)',
+  'info': 'var(--color-info)',
+  'critical': 'var(--color-severity-critical)',
+  'high': 'var(--color-severity-high)',
+  'medium': 'var(--color-severity-medium)',
+  'low': 'var(--color-severity-low)'
+} %}
+{% set bg_color = icon_bg_colors.get(icon_color, icon_bg_colors['primary']) %}
+
+<div class="stat-card card {% if link %}stat-card-link{% endif %}" {% if link %}onclick="window.location.href='{{ link }}'" style="cursor: pointer;"{% endif %}>
+  <div class="stat-card-header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-md);">
+    <div style="flex: 1;">
+      <h3 class="stat-card-title" style="margin: 0 0 var(--spacing-xs) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);">
+        {{ title }}
+      </h3>
+      <p class="stat-card-value" style="margin: 0; font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-text-primary);">
+        {{ value }}
+      </p>
+    </div>
+    {% if icon %}
+    <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: {{ bg_color }}; opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+      <span style="font-size: 24px;" aria-hidden="true">{{ icon }}</span>
+    </div>
+    {% endif %}
+  </div>
+  {% if description %}
+  <p class="stat-card-description" style="margin: 0; font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+    {{ description }}
+  </p>
+  {% endif %}
+</div>
+

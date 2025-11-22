@@ -802,6 +802,82 @@
 }
 
 /* ============================================
+   Statistics Cards
+   ============================================ */
+
+.stat-card {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.stat-card-link {
+  cursor: pointer;
+}
+
+.stat-card-link:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+.stat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.stat-card-title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xs) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-card-value {
+  font-size: var(--font-size-3xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.stat-card-description {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.stat-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stats-grid {
+  display: grid;
+  gap: var(--spacing-lg);
+}
+
+@media (max-width: 767px) {
+  .stat-card-value {
+    font-size: var(--font-size-2xl);
+  }
+
+  .stat-card-icon {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* ============================================
    Alert/Notification Styles
    ============================================ */
 

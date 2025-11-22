@@ -91,13 +91,13 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 2.9 Add form validation and error display to login page
   - [x] 2.10 Implement accessibility features for login (ARIA labels, keyboard navigation, focus management)
   - [x] 2.11 Create new `dashboard.html` template with statistics cards layout
-  - [ ] 2.12 Implement statistics cards component (total scans, pass rate, findings count, severity breakdown)
-  - [ ] 2.13 Add dashboard filtering controls (scan type, time range, status)
-  - [ ] 2.14 Create recent activity feed section showing last 10 scans
-  - [ ] 2.15 Add quick action buttons for triggering new scans
-  - [ ] 2.16 Implement dashboard auto-refresh functionality (every 30 seconds)
-  - [ ] 2.17 Add export functionality for dashboard data (CSV, JSON)
-  - [ ] 2.18 Create backend endpoint for dashboard statistics (`/api/v1/dashboard/stats`)
+  - [x] 2.12 Implement statistics cards component (total scans, pass rate, findings count, severity breakdown)
+  - [x] 2.13 Add dashboard filtering controls (scan type, time range, status)
+  - [x] 2.14 Create recent activity feed section showing last 10 scans
+  - [x] 2.15 Add quick action buttons for triggering new scans
+  - [x] 2.16 Implement dashboard auto-refresh functionality (every 30 seconds)
+  - [x] 2.17 Add export functionality for dashboard data (CSV, JSON)
+  - [x] 2.18 Create backend endpoint for dashboard statistics (`/api/v1/dashboard/stats`)
 
 - [ ] 3.0 Scan Pages Enhancement (List, Detail, Forms)
   - [ ] 3.1 Enhance `index.html` (scan list) with modern table design and hover effects

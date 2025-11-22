@@ -20,6 +20,26 @@
       <a href="/ui/scan" class="btn btn-primary">
         Run Scan
       </a>
+      <div class="export-dropdown" style="position: relative;">
+        <button class="btn btn-secondary export-button" aria-label="Export dashboard data" aria-expanded="false" style="display: flex; align-items: center; gap: var(--spacing-xs);">
+          Export
+          <span class="icon icon-chevron-down icon-sm" aria-hidden="true">⌄</span>
+        </button>
+        <div class="export-menu" style="display: none; position: absolute; top: 100%; right: 0; margin-top: var(--spacing-xs); background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 150px; z-index: var(--z-index-dropdown);">
+          <ul style="list-style: none; margin: 0; padding: var(--spacing-xs);">
+            <li>
+              <a href="/api/v1/dashboard/export?format=csv" class="export-link" style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast); text-decoration: none; color: var(--color-text-primary);">
+                Export as CSV
+              </a>
+            </li>
+            <li>
+              <a href="/api/v1/dashboard/export?format=json" class="export-link" style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast); text-decoration: none; color: var(--color-text-primary);">
+                Export as JSON
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -43,15 +63,47 @@
         <option value="false" {% if filters.passed == 'false' %}selected{% endif %}>Failed</option>
       </select>
     </div>
-    <div class="form-group" style="margin-bottom: 0;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_time_range" class="form-label">Time Range</label>
+      <select id="filter_time_range" name="time_range" class="form-select">
+        <option value="">All Time</option>
+        <option value="7d" {% if filters.time_range == '7d' %}selected{% endif %}>Last 7 days</option>
+        <option value="30d" {% if filters.time_range == '30d' %}selected{% endif %}>Last 30 days</option>
+        <option value="90d" {% if filters.time_range == '90d' %}selected{% endif %}>Last 90 days</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; display: flex; gap: var(--spacing-sm);">
       <button type="submit" class="btn btn-secondary">Apply Filters</button>
-    </div>
-    {% if filters.type or filters.passed %}
-    <div class="form-group" style="margin-bottom: 0;">
+      {% if filters.type or filters.passed or filters.time_range %}
       <a href="/" class="btn btn-secondary">Clear</a>
+      {% endif %}
     </div>
-    {% endif %}
   </form>
+  
+  <!-- Active Filters Display -->
+  {% if filters.type or filters.passed or filters.time_range %}
+  <div class="active-filters" style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-border-light); display: flex; flex-wrap: wrap; gap: var(--spacing-xs); align-items: center;">
+    <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Active filters:</span>
+    {% if filters.type %}
+    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Type: {{ filters.type|upper }}
+      <a href="?{% if filters.passed %}passed={{ filters.passed }}&{% endif %}{% if filters.time_range %}time_range={{ filters.time_range }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove type filter">×</a>
+    </span>
+    {% endif %}
+    {% if filters.passed %}
+    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Status: {{ 'Passed' if filters.passed == 'true' else 'Failed' }}
+      <a href="?{% if filters.type %}type={{ filters.type }}&{% endif %}{% if filters.time_range %}time_range={{ filters.time_range }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove status filter">×</a>
+    </span>
+    {% endif %}
+    {% if filters.time_range %}
+    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Time: {{ 'Last 7 days' if filters.time_range == '7d' else ('Last 30 days' if filters.time_range == '30d' else 'Last 90 days') }}
+      <a href="?{% if filters.type %}type={{ filters.type }}&{% endif %}{% if filters.passed %}passed={{ filters.passed }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove time range filter">×</a>
+    </span>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 
 <!-- Statistics Cards -->
@@ -286,6 +338,98 @@
   </div>
   {% endif %}
 </div>
+
+<!-- Dashboard Scripts -->
+<script>
+(function() {
+  'use strict';
+  
+  // ============================================
+  // Auto-refresh functionality
+  // ============================================
+  
+  let refreshInterval = null;
+  const REFRESH_INTERVAL = 30000; // 30 seconds
+  
+  function refreshDashboard() {
+    // Only refresh if page is visible
+    if (document.hidden) return;
+    
+    // Reload the page to get updated statistics
+    // In the future, this could be an AJAX call to update only stats
+    window.location.reload();
+  }
+  
+  function startAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+    }
+    refreshInterval = setInterval(refreshDashboard, REFRESH_INTERVAL);
+  }
+  
+  function stopAutoRefresh() {
+    if (refreshInterval) {
+      clearInterval(refreshInterval);
+      refreshInterval = null;
+    }
+  }
+  
+  // Start auto-refresh when page loads
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startAutoRefresh);
+  } else {
+    startAutoRefresh();
+  }
+  
+  // Pause auto-refresh when page is hidden
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      stopAutoRefresh();
+    } else {
+      startAutoRefresh();
+    }
+  });
+  
+  // Clean up on page unload
+  window.addEventListener('beforeunload', stopAutoRefresh);
+  
+  // ============================================
+  // Export dropdown functionality
+  // ============================================
+  
+  const exportButton = document.querySelector('.export-button');
+  const exportMenu = document.querySelector('.export-menu');
+  
+  if (exportButton && exportMenu) {
+    exportButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const isOpen = exportMenu.style.display === 'block';
+      exportMenu.style.display = isOpen ? 'none' : 'block';
+      exportButton.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+    });
+    
+    // Close on outside click
+    document.addEventListener('click', function(e) {
+      if (!exportButton.contains(e.target) && !exportMenu.contains(e.target)) {
+        exportMenu.style.display = 'none';
+        exportButton.setAttribute('aria-expanded', 'false');
+      }
+    });
+    
+    // Keyboard support
+    exportButton.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        exportButton.click();
+      } else if (e.key === 'Escape') {
+        exportMenu.style.display = 'none';
+        exportButton.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+})();
+</script>
 
 {% endblock %}
 
