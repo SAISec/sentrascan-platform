@@ -79,7 +79,7 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 1.9 Create utility classes for common patterns (if not using Tailwind)
   - [x] 1.10 Configure FastAPI to serve static files from `src/sentrascan/web/static/`
 
-- [ ] 2.0 Core Pages Redesign (Dashboard, Login, Navigation)
+- [x] 2.0 Core Pages Redesign (Dashboard, Login, Navigation)
   - [x] 2.1 Enhance `base.html` with semantic HTML structure (header, nav, main, footer)
   - [x] 2.2 Implement responsive navigation header with logo, main nav links, and user menu
   - [x] 2.3 Create mobile hamburger menu with slide-out drawer and overlay

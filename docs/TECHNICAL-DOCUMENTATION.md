@@ -7,10 +7,10 @@
 3. [API Documentation](#api-documentation)
 4. [Database Schema](#database-schema)
 5. [Module Details](#module-details)
-6. [Deployment Guide](#deployment-guide)
+6. [Deployment](#deployment)
 7. [Development Guide](#development-guide)
 8. [Configuration](#configuration)
-9. [Security Considerations](#security-considerations)
+9. [Security](#security)
 10. [Troubleshooting](#troubleshooting)
 
 ---
@@ -648,69 +648,19 @@ sequenceDiagram
 
 ---
 
-## Deployment Guide
+## Deployment
 
-### Docker Compose Deployment
+For deployment instructions, see:
+- **[Quick Start Guide](QUICK-START.md)** - Quick setup for development/testing
+- **[Administrator Guide](ADMIN-GUIDE.md#production-deployment)** - Production deployment guide
 
-**Prerequisites:**
-- Docker 24+
-- Docker Compose 2.0+
-- 2GB RAM minimum
-- 10GB disk space
-
-**Quick Start:**
+**Quick Development Setup:**
 ```bash
-# Clone repository
-git clone <repo-url>
-cd sentrascan-platform
-
-# Start services
-docker-compose up -d
-
-# Initialize database
-docker-compose exec api sentrascan db init
-
-# Create API key
-docker-compose exec api sentrascan auth create --name admin --role admin
+# Install and run locally
+pip install -e .
+sentrascan db init
+sentrascan server --host 0.0.0.0 --port 8200
 ```
-
-**Access Points:**
-- Web UI: `http://localhost:8200`
-- REST API: `http://localhost:8200/api/v1`
-- API Docs: `http://localhost:8200/docs`
-
-### Environment Variables
-
-**API Service:**
-```bash
-DATABASE_URL=postgresql+psycopg2://user:pass@db:5432/sentrascan
-MODELAUDIT_CACHE_DIR=/cache
-SENTRASCAN_SESSION_COOKIE=ss_session
-SENTRASCAN_SECRET=your-secret-key-here
-```
-
-**Database Service:**
-```bash
-POSTGRES_DB=sentrascan
-POSTGRES_USER=sentrascan
-POSTGRES_PASSWORD=changeme
-```
-
-### Volumes
-
-- `./data` - Database files (SQLite) or PostgreSQL data
-- `./reports` - Scan report outputs
-- `./sboms` - Generated SBOM files
-- `./cache` - Model cache directory
-
-### Production Considerations
-
-1. **Database:** Use PostgreSQL for production (configured in `docker-compose.yml`)
-2. **Secrets:** Set strong `SENTRASCAN_SECRET` for session signing
-3. **HTTPS:** Use reverse proxy (nginx/traefik) with TLS
-4. **Backups:** Regular database backups
-5. **Monitoring:** Add health check endpoints and logging
-6. **Scaling:** Use external job queue (Redis/RabbitMQ) for horizontal scaling
 
 ---
 
@@ -876,162 +826,40 @@ sbom_requirements:
 
 ---
 
-## Security Considerations
+## Security
 
-### Authentication & Authorization
+For comprehensive security guidance, see **[Security Best Practices](SECURITY.md)**.
 
-1. **API Keys:**
-   - Keys are hashed using SHA-256 before storage
-   - Never stored in plaintext
-   - Can be revoked via `is_revoked` flag
-
-2. **Session Management:**
-   - Web UI uses signed cookies (HMAC-SHA256)
-   - Secret key must be strong and kept secure
-   - Set via `SENTRASCAN_SECRET` environment variable
-
-3. **Role-Based Access Control:**
-   - `admin` role: Full access (scans, baselines, policies)
-   - `viewer` role: Read-only access
-
-### Data Security
-
-1. **Database:**
-   - Use PostgreSQL with encrypted connections in production
-   - Enable database encryption at rest
-   - Regular backups with encryption
-
-2. **Secrets:**
-   - Never commit API keys or secrets to version control
-   - Use environment variables or secret management systems
-   - Rotate secrets regularly
-
-3. **Network:**
-   - Use HTTPS/TLS for API endpoints in production
-   - Configure CORS appropriately
-   - Rate limiting (future enhancement)
-
-### Input Validation
-
-- All API endpoints validate input using Pydantic models
-- File paths are sanitized before use
-- Timeout limits prevent resource exhaustion
-
-### Audit Logging
-
-- All scan operations are logged in database
-- Baseline changes tracked with approver information
-- API key usage can be tracked (future enhancement)
+**Key Security Features:**
+- API key authentication (SHA-256 hashed)
+- Role-based access control (admin/viewer)
+- Session management with signed cookies
+- Input validation on all endpoints
+- Audit logging for all operations
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+For comprehensive troubleshooting, see **[Runbooks - Incident Response](RUNBOOKS.md#incident-response)**.
 
-#### 1. Database Connection Errors
-
-**Symptoms:**
-```
-sqlalchemy.exc.OperationalError: (psycopg2.OperationalError) ...
-```
-
-**Solutions:**
-- Verify `DATABASE_URL` environment variable
-- Check PostgreSQL service is running: `docker-compose ps db`
-- Verify credentials match `docker-compose.yml`
-- Check database exists: `docker-compose exec db psql -U sentrascan -d sentrascan`
-
-#### 2. Scanner Dependencies Missing
-
-**Symptoms:**
-```
-ModuleNotFoundError: No module named 'mcp_checkpoint'
-```
-
-**Solutions:**
-- Rebuild Docker image: `docker-compose build --no-cache`
-- Verify dependencies in `Dockerfile`
-- Check Python version (requires 3.11+)
-
-#### 3. Scan Timeouts
-
-**Symptoms:**
-- Scans hang indefinitely
-- Timeout errors
-
-**Solutions:**
-- Increase timeout in scan request: `"timeout": 120`
-- Check system resources (CPU, memory)
-- Verify scanner processes are not stuck
-- Check logs: `docker-compose logs api`
-
-#### 4. Policy Not Applied
-
-**Symptoms:**
-- Scans pass when they should fail
-- Policy file not found errors
-
-**Solutions:**
-- Verify policy file path is correct
-- Check YAML syntax is valid
-- Ensure policy file is mounted in container (if using Docker)
-- Use absolute paths for policy files
-
-#### 5. Web UI Authentication Issues
-
-**Symptoms:**
-- Cannot log in
-- Session expires immediately
-
-**Solutions:**
-- Verify `SENTRASCAN_SECRET` is set and consistent
-- Clear browser cookies
-- Check API key is valid: `sentrascan auth create --name test --role admin`
-- Verify session cookie is set correctly
-
-### Debug Mode
-
-Enable verbose logging:
-
+**Quick Diagnostics:**
 ```bash
-# Set environment variable
-export LOG_LEVEL=debug
-
-# Or in docker-compose.yml
-environment:
-  - LOG_LEVEL=debug
-```
-
-### Health Checks
-
-Check system health:
-
-```bash
-# API health
+# Health check
 curl http://localhost:8200/api/v1/health
 
-# Database connection
-docker-compose exec api sentrascan db init
-
 # Scanner diagnostics
-docker-compose exec api sentrascan doctor
-```
+sentrascan doctor
 
-### Logs
-
-View logs:
-
-```bash
-# All services
-docker-compose logs
-
-# Specific service
+# View logs
 docker-compose logs api
-
-# Follow logs
-docker-compose logs -f api
 ```
+
+**Common Technical Issues:**
+- **Database errors:** Verify `DATABASE_URL` and database service status
+- **Scanner missing:** Rebuild Docker image or check Python version (3.11+)
+- **Scan timeouts:** Increase timeout setting or check system resources
+- **Policy issues:** Verify policy file path and YAML syntax
 
 ---
 

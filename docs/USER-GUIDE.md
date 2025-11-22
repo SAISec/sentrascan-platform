@@ -689,33 +689,15 @@ subprocess.call(["echo", user_input])  # Use list, not string
 
 ## Troubleshooting
 
-### Scan Fails Unexpectedly
+For comprehensive troubleshooting guidance, see:
+- **[Runbooks - Incident Response](RUNBOOKS.md#incident-response)** - Operational troubleshooting
+- **[Technical Documentation - Troubleshooting](TECHNICAL-DOCUMENTATION.md#troubleshooting)** - Technical issues
+- **[CI/CD Integration - Troubleshooting](INTEGRATION-CICD.md#troubleshooting)** - CI/CD specific issues
 
-1. Check policy configuration
-2. Verify severity thresholds
-3. Review blocking issues
-4. Check logs for errors
-
-### Findings Not Appearing
-
-1. Verify scanner engines are running
-2. Check timeout settings
-3. Review scan logs
-4. Ensure config files are accessible
-
-### Baseline Comparison Issues
-
-1. Verify baseline IDs are correct
-2. Check baseline content format
-3. Review comparison API response
-4. Check for data corruption
-
-### Performance Issues
-
-1. Increase timeout settings
-2. Reduce number of configs scanned
-3. Check system resources
-4. Review scan logs for bottlenecks
+**Common Quick Fixes:**
+- **Scan fails:** Check policy configuration and severity thresholds
+- **Findings missing:** Verify scanner engines are running (`sentrascan doctor`)
+- **Performance issues:** Increase timeout settings or reduce scan scope
 
 ---
 

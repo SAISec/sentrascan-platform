@@ -204,38 +204,19 @@ curl -X POST http://localhost:8200/api/v1/models/scans \
 
 ## Troubleshooting
 
-### Service Not Starting
-
+**Quick Fixes:**
 ```bash
-# Check service status
-docker-compose ps
+# Service not starting
+docker-compose ps && docker-compose restart
 
-# View logs
-docker-compose logs api
-
-# Restart services
-docker-compose restart
-```
-
-### Database Connection Error
-
-```bash
-# Verify database is running
-docker-compose ps db
-
-# Check database connection
+# Database connection
 docker-compose exec db psql -U sentrascan -d sentrascan -c "SELECT 1;"
-```
 
-### Scanner Not Found
-
-```bash
-# Rebuild Docker image
-docker-compose build --no-cache
-
-# Verify scanner installation
+# Scanner issues
 docker-compose exec api sentrascan doctor
 ```
+
+For comprehensive troubleshooting, see **[Runbooks](RUNBOOKS.md#incident-response)**.
 
 ---
 
