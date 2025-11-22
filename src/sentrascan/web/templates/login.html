@@ -1,9 +1,277 @@
 {% extends "base.html" %}
+
+{% block title %}Login - SentraScan Platform{% endblock %}
+
 {% block content %}
-<h2>Login</h2>
-{% if error %}<p style="color:#F44336;">{{ error }}</p>{% endif %}
-<form method="post" action="/login">
-  <label>API Key<br><input type="password" name="api_key" style="width:100%" required /></label><br>
-  <button type="submit">Sign In</button>
-</form>
+<div class="login-container" style="display: flex; align-items: center; justify-content: center; min-height: 60vh; padding: var(--spacing-xl) 0;">
+  <div class="login-card card" style="width: 100%; max-width: 400px;">
+    <div class="login-header" style="text-align: center; margin-bottom: var(--spacing-xl);">
+      <h1 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-2xl); color: var(--color-text-primary);">
+        Welcome Back
+      </h1>
+      <p style="margin: 0; font-size: var(--font-size-base); color: var(--color-text-secondary);">
+        Sign in to SentraScan Platform
+      </p>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error" role="alert" aria-live="polite" 
+         style="padding: var(--spacing-md); margin-bottom: var(--spacing-lg); background-color: #FEE; border: 1px solid var(--color-error); border-radius: var(--radius-md); color: var(--color-error);">
+      <strong>Error:</strong> {{ error }}
+    </div>
+    {% endif %}
+
+    <form method="post" action="/login" class="login-form" novalidate aria-label="Login form">
+      <fieldset style="border: none; margin: 0; padding: 0;">
+        <legend class="sr-only">Login credentials</legend>
+        
+        <div class="form-group">
+          <label for="api_key" class="form-label required">
+            API Key
+            <span class="sr-only">(required)</span>
+          </label>
+          <div class="password-input-wrapper" style="position: relative;">
+            <input 
+              type="password" 
+              id="api_key" 
+              name="api_key" 
+              class="form-input {% if error %}error{% endif %}" 
+              required 
+              autocomplete="current-password"
+              aria-describedby="api_key_help {% if error %}api_key_error{% endif %}"
+              aria-invalid="{% if error %}true{% else %}false{% endif %}"
+              aria-required="true"
+              placeholder="Enter your API key"
+              minlength="1"
+              autofocus
+            />
+            <button 
+              type="button" 
+              class="password-toggle" 
+              aria-label="Show password"
+              aria-pressed="false"
+              tabindex="0"
+              style="position: absolute; right: var(--spacing-sm); top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: var(--spacing-xs); color: var(--color-text-secondary); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;"
+            >
+              <span class="password-toggle-icon" aria-hidden="true">👁</span>
+            </button>
+          </div>
+          <p id="api_key_help" class="form-help-text">
+            Enter your API key to authenticate
+          </p>
+          <div id="api_key_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% endif %}">
+            {% if error %}{{ error }}{% endif %}
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-bottom: var(--spacing-lg);">
+          <button type="submit" class="btn btn-primary" style="width: 100%;" aria-label="Sign in to SentraScan Platform">
+            <span class="button-text">Sign In</span>
+            <span class="button-spinner" style="display: none;" aria-hidden="true">
+              <span class="spinner spinner-sm"></span>
+            </span>
+            <span class="sr-only button-loading-text" style="display: none;">Signing in...</span>
+          </button>
+        </div>
+      </fieldset>
+    </form>
+
+    <div class="login-footer" style="text-align: center; padding-top: var(--spacing-lg); border-top: 1px solid var(--color-border-light);">
+      <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin: 0;">
+        Need help? Contact your administrator for an API key.
+      </p>
+    </div>
+  </div>
+</div>
+
+<style>
+/* Screen reader only class */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+</style>
+
+<script>
+// Login form validation and functionality
+(function() {
+  const form = document.querySelector('.login-form');
+  const apiKeyInput = document.getElementById('api_key');
+  const apiKeyError = document.getElementById('api_key_error');
+  const submitButton = form?.querySelector('button[type="submit"]');
+  const buttonText = submitButton?.querySelector('.button-text');
+  const buttonSpinner = submitButton?.querySelector('.button-spinner');
+  const toggleButton = document.querySelector('.password-toggle');
+  const toggleIcon = document.querySelector('.password-toggle-icon');
+
+  // Password toggle functionality
+  if (apiKeyInput && toggleButton) {
+    toggleButton.addEventListener('click', function(e) {
+      e.preventDefault();
+      const isPassword = apiKeyInput.type === 'password';
+      
+      apiKeyInput.type = isPassword ? 'text' : 'password';
+      toggleButton.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+      toggleButton.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
+      toggleIcon.textContent = isPassword ? '🙈' : '👁';
+    });
+
+    // Keyboard support for toggle
+    toggleButton.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggleButton.click();
+      }
+    });
+  }
+
+  // Validation functions
+  function showError(message) {
+    if (!apiKeyError || !apiKeyInput) return;
+    
+    apiKeyError.textContent = message;
+    apiKeyError.style.display = 'block';
+    apiKeyInput.classList.add('error');
+    apiKeyInput.setAttribute('aria-invalid', 'true');
+    apiKeyInput.setAttribute('aria-describedby', 'api_key_help api_key_error');
+    
+    // Focus on input to announce error to screen readers
+    apiKeyInput.focus();
+    
+    // Scroll to error if needed (but don't interrupt focus)
+    setTimeout(() => {
+      apiKeyError.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+  }
+
+  function clearError() {
+    if (!apiKeyError || !apiKeyInput) return;
+    
+    apiKeyError.textContent = '';
+    apiKeyError.style.display = 'none';
+    apiKeyInput.classList.remove('error');
+    apiKeyInput.setAttribute('aria-invalid', 'false');
+    apiKeyInput.setAttribute('aria-describedby', 'api_key_help');
+  }
+
+  function validateApiKey() {
+    const value = apiKeyInput.value.trim();
+    
+    if (!value) {
+      showError('API key is required');
+      return false;
+    }
+    
+    if (value.length < 1) {
+      showError('API key cannot be empty');
+      return false;
+    }
+    
+    clearError();
+    return true;
+  }
+
+  // Real-time validation on input
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('input', function() {
+      // Only clear client-side errors, not server-side errors
+      const value = this.value.trim();
+      if (value.length > 0 && !this.classList.contains('error')) {
+        // Only clear if there's no server error
+        {% if not error %}
+        clearError();
+        {% endif %}
+      }
+    });
+
+    apiKeyInput.addEventListener('blur', function() {
+      // Validate on blur only if no server error is present
+      {% if not error %}
+      if (this.value.trim().length === 0) {
+        validateApiKey();
+      }
+      {% endif %}
+    });
+  }
+
+  // Form submission validation
+  if (form) {
+    form.addEventListener('submit', function(e) {
+      // Clear any previous client-side errors
+      {% if not error %}
+      clearError();
+      {% endif %}
+      
+      // Validate before submission
+      if (!validateApiKey()) {
+        e.preventDefault();
+        // Focus management: focus on the invalid input
+        apiKeyInput.focus();
+        return false;
+      }
+
+      // Show loading state
+      if (submitButton && buttonText && buttonSpinner) {
+        submitButton.disabled = true;
+        buttonText.style.display = 'none';
+        buttonSpinner.style.display = 'inline-flex';
+        submitButton.setAttribute('aria-busy', 'true');
+        
+        // Announce loading state to screen readers
+        const loadingText = submitButton.querySelector('.button-loading-text');
+        if (loadingText) {
+          loadingText.style.display = 'inline';
+        }
+        
+        // Prevent multiple submissions
+        form.setAttribute('data-submitting', 'true');
+      }
+    });
+  }
+
+  // Keyboard navigation enhancements
+  if (apiKeyInput) {
+    // Allow Enter key to submit form (default behavior, but ensure it works)
+    apiKeyInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+        // Let the form handle submission naturally
+        // This ensures proper validation flow
+      }
+    });
+  }
+
+  // Focus management on page load
+  // If there's a server error, focus on the input to announce it
+  {% if error %}
+  if (apiKeyInput) {
+    // Small delay to ensure page is fully loaded
+    setTimeout(function() {
+      apiKeyInput.focus();
+    }, 100);
+  }
+  {% endif %}
+
+  // Handle HTML5 validation
+  if (apiKeyInput) {
+    apiKeyInput.addEventListener('invalid', function(e) {
+      e.preventDefault();
+      if (!this.validity.valid) {
+        if (this.validity.valueMissing) {
+          showError('API key is required');
+        } else {
+          showError('Please enter a valid API key');
+        }
+        this.focus();
+      }
+    });
+  }
+})();
+</script>
 {% endblock %}

@@ -60,9 +60,29 @@ Access the API at `http://localhost:8200` and the web UI at `http://localhost:82
 
 ## Documentation
 
+### Getting Started
+- [Quick Start Guide](docs/QUICK-START.md) - Get started in 5 minutes
+- [User Guide](docs/USER-GUIDE.md) - Complete user guide with workflows
+
+### Technical Reference
+- [Technical Documentation](docs/TECHNICAL-DOCUMENTATION.md) - Complete technical reference
+- [API Client Examples](docs/API-CLIENT-EXAMPLES.md) - Code examples in multiple languages
+
+### Operations
+- [Administrator Guide](docs/ADMIN-GUIDE.md) - Production deployment and administration
+- [Runbooks](docs/RUNBOOKS.md) - Operational procedures and incident response
+- [Monitoring Guide](docs/MONITORING.md) - Metrics, alerting, and observability
+- [Backup & Recovery](docs/BACKUP-RECOVERY.md) - Backup and disaster recovery procedures
+
+### Security & Integration
+- [Security Best Practices](docs/SECURITY.md) - Security hardening and compliance
+- [CI/CD Integration](docs/INTEGRATION-CICD.md) - Pipeline integration examples
+
+### Analysis & Planning
 - [Product Requirements Document](docs/PRODUCT-REQUIREMENTS-DOCUMENT.md)
 - [MCP Analysis](docs/mcp-analysis/)
 - [Model Analysis](docs/model-analysis/)
+- [Documentation Improvement Plan](docs/DOCUMENTATION-IMPROVEMENT-PLAN.md) - Roadmap for enhancements
 
 ## License
 

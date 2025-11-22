@@ -193,6 +193,28 @@
   color: var(--color-text-secondary);
 }
 
+.password-input-wrapper {
+  position: relative;
+}
+
+.password-input-wrapper .form-input {
+  padding-right: 48px; /* Space for toggle button */
+}
+
+.password-toggle {
+  transition: color var(--transition-fast);
+}
+
+.password-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 .form-checkbox,
 .form-radio {
   width: 20px;
@@ -670,4 +692,173 @@
 /* Note: These Unicode icons are fallbacks. In production, replace with proper SVG icons
    for better appearance and accessibility. SVG icons should be added to the images/ directory
    and referenced using <svg> tags or <img> tags with proper alt text. */
+
+/* ============================================
+   Navigation Styles
+   ============================================ */
+
+.nav-link {
+  color: var(--color-text-primary);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+}
+
+.nav-link:hover {
+  background-color: var(--color-gray-100);
+  color: var(--color-primary);
+}
+
+.nav-link-active {
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+}
+
+.nav-link-active:hover {
+  background-color: var(--color-primary-dark);
+  color: var(--color-text-inverse);
+}
+
+.user-menu-toggle:hover {
+  background-color: var(--color-gray-100);
+  border-color: var(--color-border-medium);
+}
+
+.user-menu-dropdown a {
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.user-menu-dropdown a:hover {
+  background-color: var(--color-gray-100);
+}
+
+/* ============================================
+   Breadcrumb Navigation
+   ============================================ */
+
+.breadcrumb {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-sm) 0;
+}
+
+.breadcrumb ol {
+  font-size: var(--font-size-sm);
+}
+
+.breadcrumb a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.breadcrumb a:hover {
+  background-color: var(--color-gray-100);
+  text-decoration: underline;
+}
+
+.breadcrumb a:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.breadcrumb [aria-current="page"] {
+  color: var(--color-text-secondary);
+  font-weight: var(--font-weight-medium);
+}
+
+.breadcrumb-separator {
+  user-select: none;
+  color: var(--color-text-tertiary);
+}
+
+/* Mobile Navigation */
+.nav-mobile-drawer.open {
+  transform: translateX(0);
+}
+
+.nav-mobile-overlay.show {
+  display: block;
+  opacity: 1;
+}
+
+/* ============================================
+   Footer Styles
+   ============================================ */
+
+.footer {
+  margin-top: auto; /* Push footer to bottom if using flexbox layout */
+}
+
+@media (max-width: 767px) {
+  .footer {
+    padding: var(--spacing-lg) var(--spacing-md) !important;
+  }
+
+  .footer .container > div {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: var(--spacing-sm) !important;
+  }
+}
+
+/* ============================================
+   Alert/Notification Styles
+   ============================================ */
+
+.alert {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.alert-error {
+  background-color: #FEE;
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+}
+
+.alert-success {
+  background-color: #E8F5E9;
+  border: 1px solid var(--color-success);
+  color: #2E7D32;
+}
+
+.alert-warning {
+  background-color: #FFF3E0;
+  border: 1px solid var(--color-warning);
+  color: #E65100;
+}
+
+.alert-info {
+  background-color: #E3F2FD;
+  border: 1px solid var(--color-info);
+  color: #1565C0;
+}
+
+/* ============================================
+   Login Page Styles
+   ============================================ */
+
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-header {
+  text-align: center;
+}
+
+@media (max-width: 767px) {
+  .login-container {
+    min-height: 50vh;
+    padding: var(--spacing-lg) var(--spacing-md);
+  }
+}
 

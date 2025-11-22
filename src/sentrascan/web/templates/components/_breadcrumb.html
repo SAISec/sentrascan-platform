@@ -1,0 +1,66 @@
+{#
+  Breadcrumb Navigation Component
+  
+  Usage:
+  {% include 'components/_breadcrumb.html' with context %}
+  
+  Or with custom items:
+  {% set breadcrumb_items = [
+    {'label': 'Dashboard', 'url': '/'},
+    {'label': 'Scans', 'url': '/scans'},
+    {'label': 'Scan #123', 'url': None}
+  ] %}
+  {% include 'components/_breadcrumb.html' with context %}
+#}
+
+{% if breadcrumb_items is not defined %}
+  {# Default breadcrumb items based on current page #}
+  {% set breadcrumb_items = [] %}
+  {% if request.url.path %}
+    {% set path_parts = request.url.path.strip('/').split('/') %}
+    {% if path_parts[0] %}
+      {% set _ = breadcrumb_items.append({'label': 'Dashboard', 'url': '/'}) %}
+      {% if path_parts[0] == 'scan' and path_parts|length > 1 %}
+        {% set _ = breadcrumb_items.append({'label': 'Scans', 'url': '/'}) %}
+        {% set _ = breadcrumb_items.append({'label': 'Scan ' + path_parts[1], 'url': None}) %}
+      {% elif path_parts[0] == 'baselines' %}
+        {% set _ = breadcrumb_items.append({'label': 'Baselines', 'url': '/baselines'}) %}
+        {% if path_parts|length > 1 and path_parts[1] == 'compare' %}
+          {% set _ = breadcrumb_items.append({'label': 'Compare', 'url': None}) %}
+        {% endif %}
+      {% elif path_parts[0] == 'ui' and path_parts[1] == 'scan' %}
+        {% set _ = breadcrumb_items.append({'label': 'Run Scan', 'url': None}) %}
+      {% endif %}
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+{% if breadcrumb_items|length > 0 %}
+<nav aria-label="Breadcrumb" class="breadcrumb">
+  <ol style="display: flex; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; align-items: center; gap: var(--spacing-xs);">
+    {% for item in breadcrumb_items %}
+      <li style="display: flex; align-items: center;">
+        {% if item.url and not loop.last %}
+          <a href="{{ item.url }}" 
+             style="color: var(--color-primary); text-decoration: none; padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);"
+             {% if loop.first %}aria-label="Go to {{ item.label }}"{% endif %}>
+            {{ item.label }}
+          </a>
+        {% else %}
+          <span aria-current="page" 
+                style="color: var(--color-text-secondary); padding: var(--spacing-xs) var(--spacing-sm);">
+            {{ item.label }}
+          </span>
+        {% endif %}
+        {% if not loop.last %}
+          <span class="breadcrumb-separator" aria-hidden="true" 
+                style="margin: 0 var(--spacing-xs); color: var(--color-text-tertiary);">
+            /
+          </span>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ol>
+</nav>
+{% endif %}
+

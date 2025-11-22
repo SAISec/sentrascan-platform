@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - SentraScan Platform{% endblock %}
+
+{% block nav_dashboard_active %}nav-link-active{% endblock %}
+
+{% block content %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Dashboard Header -->
+<div class="dashboard-header" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
+    <div>
+      <h1 style="margin: 0 0 var(--spacing-xs) 0;">Dashboard</h1>
+      <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+        Overview of your security scans and findings
+      </p>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <a href="/ui/scan" class="btn btn-primary">
+        Run Scan
+      </a>
+    </div>
+  </div>
+</div>
+
+<!-- Dashboard Filters -->
+<div class="dashboard-filters card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+  <form method="get" action="/" class="dashboard-filter-form" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_type" class="form-label">Scan Type</label>
+      <select id="filter_type" name="type" class="form-select">
+        <option value="">All Types</option>
+        <option value="model" {% if filters.type == 'model' %}selected{% endif %}>Model</option>
+        <option value="mcp" {% if filters.type == 'mcp' %}selected{% endif %}>MCP</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_status" class="form-label">Status</label>
+      <select id="filter_status" name="passed" class="form-select">
+        <option value="">All Status</option>
+        <option value="true" {% if filters.passed == 'true' %}selected{% endif %}>Passed</option>
+        <option value="false" {% if filters.passed == 'false' %}selected{% endif %}>Failed</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <button type="submit" class="btn btn-secondary">Apply Filters</button>
+    </div>
+    {% if filters.type or filters.passed %}
+    <div class="form-group" style="margin-bottom: 0;">
+      <a href="/" class="btn btn-secondary">Clear</a>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Statistics Cards -->
+<div class="stats-grid grid grid-4" style="margin-bottom: var(--spacing-xl);">
+  <!-- Total Scans Card -->
+  <div class="stat-card card">
+    <div class="stat-card-header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-md);">
+      <div>
+        <h3 class="stat-card-title" style="margin: 0 0 var(--spacing-xs) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);">
+          Total Scans
+        </h3>
+        <p class="stat-card-value" style="margin: 0; font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-text-primary);">
+          {{ stats.total_scans if stats else (scans|length if scans else 0) }}
+        </p>
+      </div>
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-primary); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+        <span style="font-size: 24px;" aria-hidden="true">📊</span>
+      </div>
+    </div>
+    <p class="stat-card-description" style="margin: 0; font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+      All time scan count
+    </p>
+  </div>
+
+  <!-- Pass Rate Card -->
+  <div class="stat-card card">
+    <div class="stat-card-header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-md);">
+      <div>
+        <h3 class="stat-card-title" style="margin: 0 0 var(--spacing-xs) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);">
+          Pass Rate
+        </h3>
+        <p class="stat-card-value" style="margin: 0; font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-text-primary);">
+          {% if stats and stats.total_scans > 0 %}
+            {{ "%.1f"|format((stats.passed_scans / stats.total_scans * 100) if stats.passed_scans else 0) }}%
+          {% else %}
+            {% set passed_count = scans|selectattr('passed', 'equalto', True)|list|length if scans else 0 %}
+            {% set total_count = scans|length if scans else 1 %}
+            {{ "%.1f"|format((passed_count / total_count * 100) if total_count > 0 else 0) }}%
+          {% endif %}
+        </p>
+      </div>
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-success); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+        <span style="font-size: 24px;" aria-hidden="true">✓</span>
+      </div>
+    </div>
+    <p class="stat-card-description" style="margin: 0; font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+      Scans that passed security checks
+    </p>
+  </div>
+
+  <!-- Total Findings Card -->
+  <div class="stat-card card">
+    <div class="stat-card-header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-md);">
+      <div>
+        <h3 class="stat-card-title" style="margin: 0 0 var(--spacing-xs) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);">
+          Total Findings
+        </h3>
+        <p class="stat-card-value" style="margin: 0; font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-text-primary);">
+          {% if stats %}
+            {{ stats.total_findings }}
+          {% else %}
+            {% set total = 0 %}
+            {% if scans %}
+              {% for scan in scans %}
+                {% set total = total + (scan.critical_count or 0) + (scan.high_count or 0) + (scan.medium_count or 0) + (scan.low_count or 0) %}
+              {% endfor %}
+            {% endif %}
+            {{ total }}
+          {% endif %}
+        </p>
+      </div>
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-warning); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+        <span style="font-size: 24px;" aria-hidden="true">⚠</span>
+      </div>
+    </div>
+    <p class="stat-card-description" style="margin: 0; font-size: var(--font-size-xs); color: var(--color-text-tertiary);">
+      Security issues detected
+    </p>
+  </div>
+
+  <!-- Severity Breakdown Card -->
+  <div class="stat-card card">
+    <div class="stat-card-header" style="margin-bottom: var(--spacing-md);">
+      <h3 class="stat-card-title" style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-secondary);">
+        Severity Breakdown
+      </h3>
+    </div>
+    <div class="severity-breakdown" style="display: flex; flex-direction: column; gap: var(--spacing-xs);">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="badge badge-critical">Critical</span>
+        <span style="font-weight: var(--font-weight-semibold);">
+          {% if stats %}
+            {{ stats.critical_count }}
+          {% else %}
+            {% set total = 0 %}
+            {% if scans %}
+              {% for scan in scans %}
+                {% set total = total + (scan.critical_count or 0) %}
+              {% endfor %}
+            {% endif %}
+            {{ total }}
+          {% endif %}
+        </span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="badge badge-high">High</span>
+        <span style="font-weight: var(--font-weight-semibold);">
+          {% if stats %}
+            {{ stats.high_count }}
+          {% else %}
+            {% set total = 0 %}
+            {% if scans %}
+              {% for scan in scans %}
+                {% set total = total + (scan.high_count or 0) %}
+              {% endfor %}
+            {% endif %}
+            {{ total }}
+          {% endif %}
+        </span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="badge badge-medium">Medium</span>
+        <span style="font-weight: var(--font-weight-semibold);">
+          {% if stats %}
+            {{ stats.medium_count }}
+          {% else %}
+            {% set total = 0 %}
+            {% if scans %}
+              {% for scan in scans %}
+                {% set total = total + (scan.medium_count or 0) %}
+              {% endfor %}
+            {% endif %}
+            {{ total }}
+          {% endif %}
+        </span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <span class="badge badge-low">Low</span>
+        <span style="font-weight: var(--font-weight-semibold);">
+          {% if stats %}
+            {{ stats.low_count }}
+          {% else %}
+            {% set total = 0 %}
+            {% if scans %}
+              {% for scan in scans %}
+                {% set total = total + (scan.low_count or 0) %}
+              {% endfor %}
+            {% endif %}
+            {{ total }}
+          {% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Activity Section -->
+<div class="recent-activity-section" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
+    <h2 style="margin: 0;">Recent Scans</h2>
+    <a href="/" class="btn btn-secondary btn-sm">View All</a>
+  </div>
+
+  {% if scans and scans|length > 0 %}
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Type</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Findings</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for scan in scans[:10] %}
+        <tr style="cursor: pointer;" onclick="window.location.href='/scan/{{ scan.id }}'">
+          <td>
+            <a href="/scan/{{ scan.id }}" style="text-decoration: none; color: inherit;">
+              {{ scan.created_at.strftime('%Y-%m-%d %H:%M') if scan.created_at.strftime else scan.created_at }}
+            </a>
+          </td>
+          <td>
+            <span class="badge badge-neutral">{{ scan.scan_type|upper }}</span>
+          </td>
+          <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            <a href="/scan/{{ scan.id }}" style="text-decoration: none; color: inherit;" title="{{ scan.target_path }}">
+              {{ scan.target_path }}
+            </a>
+          </td>
+          <td>
+            {% if scan.passed %}
+              <span class="badge badge-success">PASS</span>
+            {% else %}
+              <span class="badge badge-error">FAIL</span>
+            {% endif %}
+          </td>
+          <td>
+            <div style="display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
+              {% if scan.critical_count > 0 %}
+                <span class="badge badge-critical">{{ scan.critical_count }}</span>
+              {% endif %}
+              {% if scan.high_count > 0 %}
+                <span class="badge badge-high">{{ scan.high_count }}</span>
+              {% endif %}
+              {% if scan.medium_count > 0 %}
+                <span class="badge badge-medium">{{ scan.medium_count }}</span>
+              {% endif %}
+              {% if scan.low_count > 0 %}
+                <span class="badge badge-low">{{ scan.low_count }}</span>
+              {% endif %}
+              {% if (scan.critical_count or 0) + (scan.high_count or 0) + (scan.medium_count or 0) + (scan.low_count or 0) == 0 %}
+                <span style="color: var(--color-text-tertiary); font-size: var(--font-size-sm);">None</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl);">
+    <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+      No scans yet
+    </p>
+    <p style="color: var(--color-text-tertiary); margin-bottom: var(--spacing-lg);">
+      Get started by running your first scan
+    </p>
+    <a href="/ui/scan" class="btn btn-primary">Run Your First Scan</a>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+

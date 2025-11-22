@@ -67,7 +67,7 @@ Based on PRD: `prd-ui-redesign.md`
 
 ## Tasks
 
-- [ ] 1.0 Design System & Foundation Setup
+- [x] 1.0 Design System & Foundation Setup
   - [x] 1.1 Create static files directory structure (`src/sentrascan/web/static/css/`, `js/`, `images/`)
   - [x] 1.2 Set up CSS design system with CSS variables for colors, typography, spacing (8px base unit)
   - [x] 1.3 Define color palette in CSS variables (primary, severity colors, neutrals, semantic colors)
@@ -80,17 +80,17 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 1.10 Configure FastAPI to serve static files from `src/sentrascan/web/static/`
 
 - [ ] 2.0 Core Pages Redesign (Dashboard, Login, Navigation)
-  - [ ] 2.1 Enhance `base.html` with semantic HTML structure (header, nav, main, footer)
-  - [ ] 2.2 Implement responsive navigation header with logo, main nav links, and user menu
-  - [ ] 2.3 Create mobile hamburger menu with slide-out drawer and overlay
-  - [ ] 2.4 Add keyboard navigation support for mobile menu (ESC to close, focus trap)
-  - [ ] 2.5 Implement breadcrumb navigation component for detail pages
-  - [ ] 2.6 Add active page highlighting in navigation
-  - [ ] 2.7 Create footer component with version info (optional)
-  - [ ] 2.8 Redesign `login.html` with centered form, proper labels, show/hide password toggle
-  - [ ] 2.9 Add form validation and error display to login page
-  - [ ] 2.10 Implement accessibility features for login (ARIA labels, keyboard navigation, focus management)
-  - [ ] 2.11 Create new `dashboard.html` template with statistics cards layout
+  - [x] 2.1 Enhance `base.html` with semantic HTML structure (header, nav, main, footer)
+  - [x] 2.2 Implement responsive navigation header with logo, main nav links, and user menu
+  - [x] 2.3 Create mobile hamburger menu with slide-out drawer and overlay
+  - [x] 2.4 Add keyboard navigation support for mobile menu (ESC to close, focus trap)
+  - [x] 2.5 Implement breadcrumb navigation component for detail pages
+  - [x] 2.6 Add active page highlighting in navigation
+  - [x] 2.7 Create footer component with version info (optional)
+  - [x] 2.8 Redesign `login.html` with centered form, proper labels, show/hide password toggle
+  - [x] 2.9 Add form validation and error display to login page
+  - [x] 2.10 Implement accessibility features for login (ARIA labels, keyboard navigation, focus management)
+  - [x] 2.11 Create new `dashboard.html` template with statistics cards layout
   - [ ] 2.12 Implement statistics cards component (total scans, pass rate, findings count, severity breakdown)
   - [ ] 2.13 Add dashboard filtering controls (scan type, time range, status)
   - [ ] 2.14 Create recent activity feed section showing last 10 scans

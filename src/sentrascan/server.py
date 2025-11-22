@@ -62,6 +62,10 @@ def require_api_key(x_api_key: str | None = Header(default=None), db: Session = 
     return rec
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "web", "templates"))
 
+# Add version to template context
+from sentrascan import __version__
+templates.env.globals['app_version'] = __version__
+
 # Mount static files directory
 static_dir = os.path.join(os.path.dirname(__file__), "web", "static")
 if os.path.exists(static_dir):
