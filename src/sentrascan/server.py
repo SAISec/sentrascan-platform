@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Header, Response
 from fastapi.responses import RedirectResponse
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # ensure available for type annotations
 from sentrascan.core.storage import init_db, SessionLocal
 from sentrascan.modules.model.scanner import ModelScanner
@@ -60,6 +61,11 @@ def require_api_key(x_api_key: str | None = Header(default=None), db: Session = 
         raise HTTPException(403, "Invalid API key")
     return rec
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "web", "templates"))
+
+# Mount static files directory
+static_dir = os.path.join(os.path.dirname(__file__), "web", "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/api/v1/health")
