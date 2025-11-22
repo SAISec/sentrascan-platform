@@ -1,0 +1,22 @@
+platform:
+  name: "Default Policy"
+  version: "1.0"
+
+mcp:
+  enabled: true
+  severity_threshold: HIGH
+  block_issues:
+    - tool_poisoning
+    - command_injection
+    - baseline_drift
+    - hardcoded_secrets
+
+model:
+  enabled: true
+  severity_threshold: HIGH
+  block_issues:
+    - arbitrary_code_execution
+    - os_command_execution
+    - file_system_access
+  sbom_requirements:
+    require_sbom: true

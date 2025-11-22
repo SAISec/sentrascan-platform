@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Project-specific
+.cache/
+reports/
+sboms/
+cache/
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.pytest_cache
+
+# Third-party dependencies (cloned repos for analysis)
+# These should be installed via pip, not committed
+mcp-checkpoint/
+mcp-scan/
+mcp-scanner/
+model-unpickler/
+modelscan/
+picklescan/
+proximity/
+watchtower/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp

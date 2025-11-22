@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Baseline Compare</h2>
+<p><strong>Left:</strong> {{ left.id }} ({{ left.name }}) | <strong>Right:</strong> {{ right.id }} ({{ right.name }})</p>
+
+<h3>Diff</h3>
+<table>
+  <thead><tr><th>Path</th><th>Change</th><th>From</th><th>To</th></tr></thead>
+  <tbody>
+  {% for d in diff %}
+    <tr>
+      <td><code>{{ d.path }}</code></td>
+      <td>{{ d.change }}</td>
+      <td><pre style="white-space:pre-wrap;">{{ d.from if 'from' in d else '' }}</pre></td>
+      <td><pre style="white-space:pre-wrap;">{{ d.to if 'to' in d else '' }}</pre></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentrascan"
+version = "0.1.0"
+description = "SentraScan Platform: Unified MCP and Model security scanning with SBOM"
+authors = [{ name = "SentraScan Team" }]
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "click>=8.1.7",
+  "fastapi>=0.110.0",
+  "uvicorn[standard]>=0.30.0",
+  "jinja2>=3.1.3",
+  "pydantic>=2.7.0",
+  "sqlalchemy>=2.0.30",
+  "psycopg2-binary>=2.9.9",
+  "pyyaml>=6.0.1",
+  "python-multipart>=0.0.9",
+  "modelaudit>=0.2.17",
+  "semgrep>=1.84.0",
+  # optional for runtime probe; if unavailable, probe falls back safely
+  # "mcp>=1.0.0",
+]
+
+[project.scripts]
+sentrascan = "sentrascan.cli:main"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: integration tests requiring docker-compose",
+]

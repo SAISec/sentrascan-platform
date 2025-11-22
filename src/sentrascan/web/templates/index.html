@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Recent Scans</h2>
+<form method="get" action="/">
+  <label>Type:
+    <select name="type">
+      <option value="">All</option>
+      <option value="model">Model</option>
+      <option value="mcp">MCP</option>
+    </select>
+  </label>
+  <label>Status:
+    <select name="passed">
+      <option value="">All</option>
+      <option value="true">Passed</option>
+      <option value="false">Failed</option>
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+<p><a href="/baselines">Baselines</a></p>
+<table>
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Type</th>
+      <th>Target</th>
+      <th>Passed</th>
+      <th>Critical</th>
+      <th>High</th>
+      <th>Medium</th>
+      <th>Low</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in scans %}
+      <tr>
+<td><a href="/scan/{{ r.id }}">{{ r.created_at }}</a></td>
+        <td>{{ r.scan_type }}</td>
+        <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis;">{{ r.target_path }}</td>
+        <td>{% if r.passed %}<span class="badge ok">PASS</span>{% else %}<span class="badge fail">FAIL</span>{% endif %}</td>
+        <td>{{ r.critical_count }}</td>
+        <td>{{ r.high_count }}</td>
+        <td>{{ r.medium_count }}</td>
+        <td>{{ r.low_count }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div style="margin-top:1rem;">
+  {% if page and page>1 %}
+    <a href="/?type={{ filters.type }}&passed={{ filters.passed }}&page={{ page-1 }}">Prev</a>
+  {% endif %}
+  {% if has_next %}
+    <a style="margin-left:1rem;" href="/?type={{ filters.type }}&passed={{ filters.passed }}&page={{ page+1 }}">Next</a>
+  {% endif %}
+</div>
+<p style="margin-top:1rem;">Use the CLI, API, or UI to trigger scans.</p>
+{% endblock %}

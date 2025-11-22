@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SentraScan Platform</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 2rem; }
+    header { display:flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+    .badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; color: white; }
+    .ok { background: #4CAF50; }
+    .fail { background: #F44336; }
+    .warn { background: #FF9800; }
+    .crit { background: #9C27B0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>SentraScan Platform</h1>
+<nav>
+      <a href="/">Dashboard</a> |
+      <a href="/baselines">Baselines</a> |
+      <a href="/ui/scan">Run Scan</a> |
+      <a href="/login">Login</a> |
+      <a href="/logout">Logout</a>
+    </nav>
+  </header>
+  {% block content %}{% endblock %}
+  <hr>
+  <p style="font-size:12px;color:#555;">Severity legend:
+    <span class="badge crit">Critical</span> indicates immediate action required;
+    <span class="badge fail">High</span> is severe and should be addressed promptly;
+    <span class="badge warn">Medium</span> requires attention;
+    <span class="badge ok">Low</span> is informational or minor.
+  </p>
+</body>
+</html>

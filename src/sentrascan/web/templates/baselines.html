@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Baselines</h2>
+<table>
+  <thead>
+    <tr><th>Time</th><th>Type</th><th>Name</th><th>Hash</th><th>Active</th></tr>
+  </thead>
+  <tbody>
+    {% for b in baselines %}
+      <tr>
+        <td>{{ b.created_at }}</td>
+        <td>{{ b.baseline_type }}</td>
+        <td>{{ b.name }}</td>
+        <td>{{ b.target_hash }}</td>
+        <td>{{ b.is_active }}</td>
+      </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h3 style="margin-top:1rem;">Compare</h3>
+<form method="get" action="/baseline/compare">
+  <label>Left ID: <input type="text" name="left" /></label>
+  <label>Right ID: <input type="text" name="right" /></label>
+  <button type="submit">Compare</button>
+</form>
+{% endblock %}

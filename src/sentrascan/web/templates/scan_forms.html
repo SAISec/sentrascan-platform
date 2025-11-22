@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Run Scan</h2>
+<div style="display:flex; gap:2rem; align-items:flex-start; flex-wrap:wrap;">
+  <div style="flex:1; min-width:360px;">
+    <h3>Model Scan</h3>
+<form method="post" action="/ui/scan/model">
+      <label>Model Path (container path)<br><input type="text" name="model_path" value="/data/sample.npy" style="width:100%" /></label><br>
+      <label><input type="checkbox" name="strict" checked /> Strict Mode</label><br>
+      <label><input type="checkbox" name="generate_sbom" checked /> Generate SBOM</label><br>
+      <details>
+        <summary>Advanced</summary>
+        <label>Policy Path (optional)<br><input type="text" name="policy" value=".sentrascan.yaml" style="width:100%" /></label>
+        <label><input type="checkbox" name="run_async" /> Run asynchronously</label>
+      </details>
+      <button type="submit">Run Model Scan</button>
+    </form>
+  </div>
+  <div style="flex:1; min-width:360px;">
+<h3>MCP Scan</h3>
+    <p>Known config locations (auto-discover scans these):</p>
+    <ul>
+      <li>macOS: ~/Library/Application Support/Claude/</li>
+      <li>Linux: ~/.config/Claude/, ~/.cursor/mcp.json, ~/.codeium/windsurf/mcp_config.json, ~/.vscode/mcp.json</li>
+      <li>Windows: %APPDATA%\Claude\, %USERPROFILE%\.cursor\mcp.json, %USERPROFILE%\.codeium\windsurf\mcp_config.json, %USERPROFILE%\.vscode\mcp.json</li>
+    </ul>
+<form method="post" action="/ui/scan/mcp">
+      <label><input type="checkbox" name="auto_discover" checked /> Auto-discover known configs</label><br>
+      <details>
+        <summary>Advanced</summary>
+        <label>Config Paths (one path per line)<br>
+          <textarea name="config_paths" rows="4" style="width:100%"></textarea>
+        </label>
+        <label>Policy Path (optional)<br><input type="text" name="policy" value=".sentrascan.yaml" style="width:100%" /></label>
+        <label><input type="checkbox" name="run_async" /> Run asynchronously</label>
+      </details>
+      <button type="submit">Run MCP Scan</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

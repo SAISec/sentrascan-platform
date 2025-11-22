@@ -1,0 +1,38 @@
+services:
+  api:
+    build: .
+    image: sentrascan/platform:dev
+    command: sentrascan server --host 0.0.0.0 --port 8200
+    ports:
+      - "8200:8200"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+      - MODELAUDIT_CACHE_DIR=/cache
+      # Optional: ZAP targets for DAST runner (comma-separated URLs)
+      # - SENTRASCAN_ZAP_TARGETS=http://api:8200
+    depends_on:
+      - db
+    volumes:
+      - ./data:/data
+      - ./reports:/reports
+      - ./sboms:/sboms
+      - ./cache:/cache
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=sentrascan
+      - POSTGRES_USER=sentrascan
+      - POSTGRES_PASSWORD=changeme
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+  zap:
+    image: owasp/zap2docker-stable
+    profiles: ["zap"]
+    command: ["sleep", "infinity"]
+    depends_on:
+      - api
+    # Usage: docker compose run --rm zap zap-baseline.py -t http://api:8200 -I -m 3
+volumes:
+  pg-data:

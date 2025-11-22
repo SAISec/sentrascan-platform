@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Scan {{ scan.id }}</h2>
+<p><strong>Time:</strong> {{ scan.created_at }} | <strong>Type:</strong> {{ scan.scan_type }} | <strong>Target:</strong> {{ scan.target_path }}
+| <strong>Result:</strong> {% if scan.passed %}<span class="badge ok">PASS</span>{% else %}<span class="badge fail">FAIL</span>{% endif %}</p>
+
+<p>
+  <a href="/api/v1/scans/{{ scan.id }}/report">Download JSON Report</a>
+  {% if scan.sbom_id %} | <a href="/api/v1/scans/{{ scan.id }}/sbom">Download SBOM</a>{% endif %}
+</p>
+
+<h3>Summary</h3>
+<ul>
+  <li><span class="badge crit">Critical: {{ scan.critical_count }}</span></li>
+  <li><span class="badge fail">High: {{ scan.high_count }}</span></li>
+  <li><span class="badge warn">Medium: {{ scan.medium_count }}</span></li>
+  <li><span class="badge ok">Low: {{ scan.low_count }}</span></li>
+</ul>
+
+<h3>Findings ({{ findings|length }})</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Severity</th>
+      <th>Category</th>
+      <th>Title</th>
+      <th>Scanner</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in findings %}
+    <tr>
+      <td>{{ f.severity }}</td>
+      <td>{{ f.category }}</td>
+      <td>{{ f.title }}</td>
+      <td>{{ f.scanner }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
