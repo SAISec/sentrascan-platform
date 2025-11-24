@@ -1,7 +1,11 @@
 import os
 from fastapi import FastAPI, HTTPException, Depends, Request, Header, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import json
+import asyncio
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # ensure available for type annotations
@@ -180,6 +184,50 @@ def get_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Session
         "is_active": bool(b.is_active),
     }
 
+@app.post("/ui/baselines")
+def ui_create_baseline(request: Request, name: str = Form(...), description: str | None = Form(None), is_active: bool = Form(True), scan_id: str = Form(...), baseline_type: str = Form(...), target_hash: str | None = Form(None), db: Session = Depends(get_db)):
+    # RBAC: only admin can create
+    user = get_session_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(403, "Insufficient role: admin required")
+    
+    # Get scan report to use as baseline content
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+    
+    # Create baseline from scan
+    b = Baseline(
+        baseline_type=baseline_type,
+        name=name,
+        description=description,
+        target_hash=target_hash or scan.target_hash,
+        content={},  # Will be populated from scan report
+        scan_id=scan_id,
+        sbom_id=scan.sbom_id,
+        approved_by=getattr(user, "name", None) or "UI User",
+        is_active=is_active,
+    )
+    
+    # Get scan report for content
+    try:
+        from sentrascan.modules.model.scanner import ModelScanner
+        from sentrascan.modules.mcp.scanner import MCPScanner
+        if baseline_type == "model":
+            scanner = ModelScanner()
+            report = scanner.to_report(scan, db)
+        else:
+            scanner = MCPScanner()
+            report = scanner.to_report(scan, db)
+        b.content = report
+    except Exception as e:
+        # Fallback: use minimal content
+        b.content = {"scan_id": scan_id, "type": baseline_type}
+    
+    db.add(b)
+    db.commit()
+    return RedirectResponse(url=f"/baselines", status_code=303)
+
 @app.post("/api/v1/baselines")
 def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     # RBAC: only admin can create
@@ -202,6 +250,20 @@ def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session
     db.add(b)
     db.commit()
     return {"id": b.id}
+
+@app.delete("/api/v1/baselines/{baseline_id}")
+def delete_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+    # RBAC: only admin can delete
+    if getattr(api_key, "role", "viewer") != "admin":
+        raise HTTPException(403, "Insufficient role: admin required")
+    b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
+    if not b:
+        raise HTTPException(404, "Baseline not found")
+    if b.is_active:
+        raise HTTPException(400, "Cannot delete active baseline. Deactivate it first.")
+    db.delete(b)
+    db.commit()
+    return {"status": "deleted"}
 
 @app.post("/api/v1/baselines/compare")
 def compare_baselines(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
@@ -244,10 +306,38 @@ def compare_baselines(payload: dict, api_key=Depends(require_api_key), db: Sessi
     return {"diff": deep_diff(l.content or {}, r.content or {})}
 
 @app.get("/baselines")
-def ui_baselines(request: Request):
+def ui_baselines(request: Request, sort: str | None = None, order: str | None = None):
     db = next(get_db())
-    rows = db.query(Baseline).order_by(Baseline.created_at.desc()).limit(50).all()
-    return templates.TemplateResponse("baselines.html", {"request": request, "baselines": rows})
+    q = db.query(Baseline)
+    
+    # Apply sorting
+    sort_order = order if order in ('asc', 'desc') else 'desc'
+    if sort == 'time':
+        q = q.order_by(Baseline.created_at.desc() if sort_order == 'desc' else Baseline.created_at.asc())
+    elif sort == 'type':
+        q = q.order_by(Baseline.baseline_type.desc() if sort_order == 'desc' else Baseline.baseline_type.asc())
+    elif sort == 'name':
+        q = q.order_by(Baseline.name.desc() if sort_order == 'desc' else Baseline.name.asc())
+    elif sort == 'hash':
+        q = q.order_by(Baseline.target_hash.desc() if sort_order == 'desc' else Baseline.target_hash.asc())
+    elif sort == 'active':
+        q = q.order_by(Baseline.is_active.desc() if sort_order == 'desc' else Baseline.is_active.asc())
+    else:
+        # Default sort by time descending
+        q = q.order_by(Baseline.created_at.desc())
+    
+    rows = q.limit(50).all()
+    breadcrumb_items = [
+        {"label": "Dashboard", "url": "/"},
+        {"label": "Baselines", "url": "/baselines"}
+    ]
+    return templates.TemplateResponse("baselines.html", {
+        "request": request, 
+        "baselines": rows,
+        "sort": sort or "",
+        "order": order or "desc",
+        "breadcrumb_items": breadcrumb_items
+    })
 
 @app.get("/baseline/compare")
 def ui_baseline_compare(left: str, right: str, request: Request):
@@ -256,17 +346,52 @@ def ui_baseline_compare(left: str, right: str, request: Request):
     r = db.query(Baseline).filter(Baseline.id == right).first()
     if not l or not r:
         raise HTTPException(404, "Baseline not found")
-    def diff(a, b):
-        a = a or {}
-        b = b or {}
-        akeys = set(a.keys())
-        bkeys = set(b.keys())
-        added = list(sorted(bkeys - akeys))
-        removed = list(sorted(akeys - bkeys))
-        changed = [k for k in (akeys & bkeys) if a[k] != b[k]]
-        return {"added": added, "removed": removed, "changed": changed}
-    d = diff(l.content, r.content)
-    return templates.TemplateResponse("baseline_compare.html", {"request": request, "left": l, "right": r, "diff": d})
+    
+    # Use the same deep_diff function as the API
+    def deep_diff(a, b, path=""):
+        diffs = []
+        if isinstance(a, dict) and isinstance(b, dict):
+            keys = set(a.keys()) | set(b.keys())
+            for k in sorted(keys):
+                p = f"{path}.{k}" if path else k
+                if k not in a:
+                    diffs.append({"path": p, "change": "added", "to": b[k]})
+                elif k not in b:
+                    diffs.append({"path": p, "change": "removed", "from": a[k]})
+                else:
+                    if a[k] != b[k]:
+                        diffs.extend(deep_diff(a[k], b[k], p))
+        elif isinstance(a, list) and isinstance(b, list):
+            la, lb = len(a), len(b)
+            n = max(la, lb)
+            for i in range(n):
+                p = f"{path}[{i}]"
+                if i >= la:
+                    diffs.append({"path": p, "change": "added", "to": b[i]})
+                elif i >= lb:
+                    diffs.append({"path": p, "change": "removed", "from": a[i]})
+                else:
+                    if a[i] != b[i]:
+                        diffs.extend(deep_diff(a[i], b[i], p))
+        else:
+            diffs.append({"path": path, "change": "changed", "from": a, "to": b})
+        return diffs
+    
+    diff_list = deep_diff(l.content or {}, r.content or {})
+    
+    breadcrumb_items = [
+        {"label": "Dashboard", "url": "/"},
+        {"label": "Baselines", "url": "/baselines"},
+        {"label": "Compare", "url": None}
+    ]
+    
+    return templates.TemplateResponse("baseline_compare.html", {
+        "request": request, 
+        "left": l, 
+        "right": r, 
+        "diff": diff_list,
+        "breadcrumb_items": breadcrumb_items
+    })
 
 # Scans API
 def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
@@ -520,7 +645,7 @@ def ui_logout():
     return resp
 
 @app.get("/")
-def ui_home(request: Request, type: str | None = None, passed: str | None = None, time_range: str | None = None, page: int = 1):
+def ui_home(request: Request, type: str | None = None, passed: str | None = None, time_range: str | None = None, date_from: str | None = None, date_to: str | None = None, search: str | None = None, sort: str | None = None, order: str | None = None, page: int = 1, page_size: int = 20):
     db = next(get_db())
     q = db.query(Scan)
     
@@ -544,10 +669,32 @@ def ui_home(request: Request, type: str | None = None, passed: str | None = None
         if cutoff:
             q = q.filter(Scan.created_at >= cutoff)
     
+    # Apply sorting
+    sort_order = order if order in ('asc', 'desc') else 'desc'
+    if sort == 'time':
+        q = q.order_by(Scan.created_at.desc() if sort_order == 'desc' else Scan.created_at.asc())
+    elif sort == 'type':
+        q = q.order_by(Scan.scan_type.desc() if sort_order == 'desc' else Scan.scan_type.asc())
+    elif sort == 'target':
+        q = q.order_by(Scan.target_path.desc() if sort_order == 'desc' else Scan.target_path.asc())
+    elif sort == 'status':
+        q = q.order_by(Scan.passed.desc() if sort_order == 'desc' else Scan.passed.asc())
+    elif sort == 'critical':
+        q = q.order_by(Scan.critical_count.desc() if sort_order == 'desc' else Scan.critical_count.asc())
+    elif sort == 'high':
+        q = q.order_by(Scan.high_count.desc() if sort_order == 'desc' else Scan.high_count.asc())
+    elif sort == 'medium':
+        q = q.order_by(Scan.medium_count.desc() if sort_order == 'desc' else Scan.medium_count.asc())
+    elif sort == 'low':
+        q = q.order_by(Scan.low_count.desc() if sort_order == 'desc' else Scan.low_count.asc())
+    else:
+        # Default sort by time descending
+        q = q.order_by(Scan.created_at.desc())
+    
     page = max(page, 1)
-    page_size = 20
+    page_size = min(max(page_size, 10), 100)  # Clamp between 10 and 100
     total = q.count()
-    rows = q.order_by(Scan.created_at.desc()).limit(page_size).offset((page-1)*page_size).all()
+    rows = q.limit(page_size).offset((page-1)*page_size).all()
     
     # Calculate statistics for dashboard
     stats_q = db.query(Scan)
@@ -578,21 +725,56 @@ def ui_home(request: Request, type: str | None = None, passed: str | None = None
         "low_count": int(low_count),
     }
     
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "scans": rows,
-        "page": page,
-        "has_next": (page*page_size) < total,
-        "filters": {"type": type or "", "passed": passed or "", "time_range": time_range or ""},
-        "stats": stats
-    })
+    # Check if this is a dashboard request (no explicit page or sort params, or dashboard template requested)
+    use_dashboard = not sort and page == 1
+    
+    if use_dashboard:
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "scans": rows,
+            "page": page,
+            "has_next": (page*page_size) < total,
+            "filters": {
+                "type": type or "", 
+                "passed": passed or "", 
+                "time_range": time_range or "",
+                "date_from": date_from or "",
+                "date_to": date_to or "",
+                "search": search or ""
+            },
+            "stats": stats
+        })
+    else:
+        # Use index.html for scan list view
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "scans": rows,
+            "page": page,
+            "has_next": (page*page_size) < total,
+            "total": total,
+            "page_size": page_size,
+            "filters": {
+                "type": type or "", 
+                "passed": passed or "", 
+                "time_range": time_range or "",
+                "date_from": date_from or "",
+                "date_to": date_to or "",
+                "search": search or ""
+            },
+            "sort": sort or "",
+            "order": order or "desc"
+        })
 
 @app.get("/ui/scan")
 def ui_scan_form(request: Request):
     user = get_session_user(request)
     if not user or user.role != "admin":
         return RedirectResponse(url="/login", status_code=302)
-    return templates.TemplateResponse("scan_forms.html", {"request": request, "user": user})
+    breadcrumb_items = [
+        {"label": "Dashboard", "url": "/"},
+        {"label": "Run Scan", "url": "/ui/scan"}
+    ]
+    return templates.TemplateResponse("scan_forms.html", {"request": request, "user": user, "breadcrumb_items": breadcrumb_items})
 
 @app.post("/ui/scan/model")
 def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str = Form(...), strict: bool = Form(False), generate_sbom: bool = Form(True), policy: str | None = Form(None), run_async: bool = Form(False)):
@@ -621,10 +803,10 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
             "existing_scan_id": scan.id,
             "on_done": _done,
         })
-        return templates.TemplateResponse("scan_submitted.html", {"request": request, "scan_id": scan.id, "message": "Model scan enqueued.", "link": f"/scan/{scan.id}"})
+        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
     else:
         scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db)
-        return templates.TemplateResponse("scan_submitted.html", {"request": request, "scan_id": scan.id, "message": "Model scan completed.", "link": f"/scan/{scan.id}"})
+        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
 
 @app.post("/ui/scan/mcp")
 def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool = Form(True), config_paths: str | None = Form(None), policy: str | None = Form(None), run_async: bool = Form(False)):
@@ -652,10 +834,58 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
             "existing_scan_id": scan.id,
             "on_done": _done,
         })
-        return templates.TemplateResponse("scan_submitted.html", {"request": request, "scan_id": scan.id, "message": "MCP scan enqueued.", "link": f"/scan/{scan.id}"})
+        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
     else:
         scan = scanner.scan(config_paths=paths, auto_discover=auto_discover, timeout=60, db=db)
-        return templates.TemplateResponse("scan_submitted.html", {"request": request, "scan_id": scan.id, "message": "MCP scan completed.", "link": f"/scan/{scan.id}"})
+        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+
+@app.get("/api/v1/scans/{scan_id}/findings/export")
+def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
+    """Export findings for a scan as CSV or JSON"""
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+    
+    findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+    
+    if format == "csv":
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["ID", "Severity", "Category", "Scanner", "Title", "Description", "Location"])
+        for f in findings:
+            writer.writerow([
+                f.id,
+                f.severity,
+                f.category or "",
+                f.scanner or "",
+                f.title or "",
+                (f.description or "").replace("\n", " ").replace("\r", " ")[:500],  # Truncate long descriptions
+                f.location or ""
+            ])
+        output.seek(0)
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=sentrascan-findings-{scan_id[:8]}.csv"}
+        )
+    else:
+        return {
+            "scan_id": scan_id,
+            "exported_at": datetime.utcnow().isoformat(),
+            "total_findings": len(findings),
+            "findings": [
+                {
+                    "id": f.id,
+                    "severity": f.severity,
+                    "category": f.category,
+                    "scanner": f.scanner,
+                    "title": f.title,
+                    "description": f.description,
+                    "location": f.location
+                }
+                for f in findings
+            ]
+        }
 
 @app.get("/scan/{scan_id}")
 def ui_scan_detail(scan_id: str, request: Request):
@@ -664,10 +894,112 @@ def ui_scan_detail(scan_id: str, request: Request):
     findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
     if not scan:
         raise HTTPException(404, "Scan not found")
+    
+    # Get existing baseline for this scan if any
+    existing_baseline = db.query(Baseline).filter(Baseline.scan_id == scan_id).first()
+    
+    breadcrumb_items = [
+        {"label": "Dashboard", "url": "/"},
+        {"label": "Scans", "url": "/"},
+        {"label": f"Scan {scan_id[:8]}...", "url": f"/scan/{scan_id}"}
+    ]
+    
     return templates.TemplateResponse(
         "scan_detail.html",
-        {"request": request, "scan": scan, "findings": findings},
+        {
+            "request": request, 
+            "scan": scan, 
+            "findings": findings,
+            "existing_baseline": existing_baseline,
+            "breadcrumb_items": breadcrumb_items
+        },
     )
+
+@app.get("/api/v1/scans/{scan_id}/status/stream")
+async def stream_scan_status(scan_id: str, request: Request):
+    """Server-Sent Events endpoint for real-time scan status updates"""
+    async def event_generator():
+        last_status = None
+        last_findings_count = None
+        
+        while True:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                break
+            
+            db = next(get_db())
+            try:
+                scan = db.query(Scan).filter(Scan.id == scan_id).first()
+                if not scan:
+                    yield f"data: {json.dumps({'error': 'Scan not found'})}\n\n"
+                    break
+                
+                # Check if status changed
+                current_status = scan.scan_status
+                current_findings = scan.total_findings or 0
+                
+                if current_status != last_status or current_findings != last_findings_count:
+                    data = {
+                        "scan_id": scan_id,
+                        "status": current_status,
+                        "passed": bool(scan.passed),
+                        "total_findings": current_findings,
+                        "critical_count": scan.critical_count or 0,
+                        "high_count": scan.high_count or 0,
+                        "medium_count": scan.medium_count or 0,
+                        "low_count": scan.low_count or 0,
+                        "duration_ms": scan.duration_ms or 0,
+                        "timestamp": scan.created_at.isoformat() if scan.created_at else None
+                    }
+                    
+                    yield f"data: {json.dumps(data)}\n\n"
+                    
+                    last_status = current_status
+                    last_findings_count = current_findings
+                    
+                    # Stop streaming if scan is completed or failed
+                    if current_status in ('completed', 'failed'):
+                        yield f"data: {json.dumps({'status': 'completed', 'scan_id': scan_id})}\n\n"
+                        break
+                
+                # Wait before next check
+                await asyncio.sleep(2)  # Poll every 2 seconds
+                
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                await asyncio.sleep(5)
+            finally:
+                db.close()
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Disable buffering in nginx
+        }
+    )
+
+@app.get("/api/v1/scans/{scan_id}/status")
+def get_scan_status(scan_id: str, db: Session = Depends(get_db)):
+    """Get current scan status (REST endpoint for polling)"""
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(404, "Scan not found")
+    
+    return {
+        "scan_id": scan_id,
+        "status": scan.scan_status,
+        "passed": bool(scan.passed),
+        "total_findings": scan.total_findings or 0,
+        "critical_count": scan.critical_count or 0,
+        "high_count": scan.high_count or 0,
+        "medium_count": scan.medium_count or 0,
+        "low_count": scan.low_count or 0,
+        "duration_ms": scan.duration_ms or 0,
+        "timestamp": scan.created_at.isoformat() if scan.created_at else None
+    }
 
 def run_server(host: str, port: int):
     import uvicorn

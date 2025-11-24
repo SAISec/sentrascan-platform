@@ -1,20 +1,494 @@
 {% extends "base.html" %}
-{% block content %}
-<h2>Baseline Compare</h2>
-<p><strong>Left:</strong> {{ left.id }} ({{ left.name }}) | <strong>Right:</strong> {{ right.id }} ({{ right.name }})</p>
 
-<h3>Diff</h3>
-<table>
-  <thead><tr><th>Path</th><th>Change</th><th>From</th><th>To</th></tr></thead>
-  <tbody>
+{% block title %}Baseline Comparison - SentraScan Platform{% endblock %}
+
+{% block content %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<div class="page-header" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: var(--spacing-md);">
+    <div>
+      <h1 style="margin: 0 0 var(--spacing-xs) 0;">Baseline Comparison</h1>
+      <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+        Compare two baseline configurations to identify differences
+      </p>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <button class="btn btn-secondary" onclick="exportComparison('json')">Export JSON</button>
+      <button class="btn btn-secondary" onclick="exportComparison('text')">Export Text</button>
+    </div>
+  </div>
+</div>
+
+<!-- Baseline Info Cards -->
+<div class="baseline-info-cards" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-lg); margin-bottom: var(--spacing-xl);">
+  <div class="card" style="padding: var(--spacing-md);">
+    <h3 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-base); color: var(--color-text-secondary);">Left Baseline</h3>
+    <div style="font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--spacing-xs);">{{ left.name }}</div>
+    <div style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+      <div><strong>Type:</strong> <span class="badge badge-neutral">{{ left.baseline_type|upper }}</span></div>
+      <div><strong>Created:</strong> {{ left.created_at.strftime('%Y-%m-%d %H:%M') if left.created_at and left.created_at.strftime else left.created_at }}</div>
+      {% if left.description %}
+      <div><strong>Description:</strong> {{ left.description }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card" style="padding: var(--spacing-md);">
+    <h3 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-base); color: var(--color-text-secondary);">Right Baseline</h3>
+    <div style="font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--spacing-xs);">{{ right.name }}</div>
+    <div style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+      <div><strong>Type:</strong> <span class="badge badge-neutral">{{ right.baseline_type|upper }}</span></div>
+      <div><strong>Created:</strong> {{ right.created_at.strftime('%Y-%m-%d %H:%M') if right.created_at and right.created_at.strftime else right.created_at }}</div>
+      {% if right.description %}
+      <div><strong>Description:</strong> {{ right.description }}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Diff Summary -->
+<div class="diff-summary card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+  <div style="display: flex; gap: var(--spacing-lg); flex-wrap: wrap; align-items: center;">
+    <div>
+      <strong>Total Differences:</strong> <span id="diff-count">{{ diff|length }}</span>
+    </div>
+    <div style="display: flex; gap: var(--spacing-md);">
+      <span class="badge" style="background: var(--color-error-light); color: var(--color-error);">
+        <span id="removed-count">0</span> Removed
+      </span>
+      <span class="badge" style="background: var(--color-warning-light); color: var(--color-warning);">
+        <span id="changed-count">0</span> Changed
+      </span>
+      <span class="badge" style="background: var(--color-success-light); color: var(--color-success);">
+        <span id="added-count">0</span> Added
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="diff-filters card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+  <div style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+    <div class="form-group" style="flex: 1; min-width: 200px; margin-bottom: 0;">
+      <label for="diff-search" class="form-label">Search</label>
+      <input type="text" id="diff-search" class="form-input" placeholder="Search by path or value..." oninput="filterDiffs()">
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <label for="diff-filter-type" class="form-label">Filter by Type</label>
+      <select id="diff-filter-type" class="form-select" onchange="filterDiffs()">
+        <option value="">All Types</option>
+        <option value="added">Added</option>
+        <option value="removed">Removed</option>
+        <option value="changed">Changed</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <button class="btn btn-secondary" onclick="expandAllDiffs()">Expand All</button>
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <button class="btn btn-secondary" onclick="collapseAllDiffs()">Collapse All</button>
+    </div>
+  </div>
+</div>
+
+<!-- Diff Navigation (Path List) -->
+{% if diff and diff|length > 0 %}
+<div class="diff-navigation card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md); max-height: 200px; overflow-y: auto;">
+  <h4 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-sm);">Quick Navigation</h4>
+  <div class="diff-paths" style="display: flex; flex-wrap: wrap; gap: var(--spacing-xs);">
+    {% for d in diff %}
+    <button 
+      class="diff-path-link" 
+      onclick="scrollToDiff('diff-{{ loop.index0 }}')"
+      data-change-type="{{ d.change }}"
+      style="padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-gray-100); border: 1px solid var(--color-border-light); border-radius: var(--radius-sm); cursor: pointer; font-size: var(--font-size-xs); transition: all var(--transition-fast);">
+      {{ d.path }}
+    </button>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Side-by-Side Comparison -->
+<div class="comparison-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md); margin-bottom: var(--spacing-xl);">
+  <!-- Left Side -->
+  <div class="comparison-panel card" style="padding: 0; overflow: hidden;">
+    <div class="comparison-header" style="padding: var(--spacing-md); background: var(--color-gray-100); border-bottom: 1px solid var(--color-border-light);">
+      <h3 style="margin: 0; font-size: var(--font-size-base);">{{ left.name }}</h3>
+    </div>
+    <div class="comparison-content" id="left-content" style="padding: var(--spacing-md); max-height: 600px; overflow-y: auto; font-family: var(--font-family-mono); font-size: var(--font-size-sm);">
+      <pre id="left-json" class="json-viewer"></pre>
+    </div>
+  </div>
+
+  <!-- Right Side -->
+  <div class="comparison-panel card" style="padding: 0; overflow: hidden;">
+    <div class="comparison-header" style="padding: var(--spacing-md); background: var(--color-gray-100); border-bottom: 1px solid var(--color-border-light);">
+      <h3 style="margin: 0; font-size: var(--font-size-base);">{{ right.name }}</h3>
+    </div>
+    <div class="comparison-content" id="right-content" style="padding: var(--spacing-md); max-height: 600px; overflow-y: auto; font-family: var(--font-family-mono); font-size: var(--font-size-sm);">
+      <pre id="right-json" class="json-viewer"></pre>
+    </div>
+  </div>
+</div>
+
+<!-- Diff Details Table -->
+{% if diff and diff|length > 0 %}
+<div class="diff-details">
+  <h2 style="margin-bottom: var(--spacing-lg);">Detailed Differences</h2>
+  
   {% for d in diff %}
-    <tr>
-      <td><code>{{ d.path }}</code></td>
-      <td>{{ d.change }}</td>
-      <td><pre style="white-space:pre-wrap;">{{ d.from if 'from' in d else '' }}</pre></td>
-      <td><pre style="white-space:pre-wrap;">{{ d.to if 'to' in d else '' }}</pre></td>
-    </tr>
+  <div class="diff-item card" id="diff-{{ loop.index0 }}" data-change-type="{{ d.change }}" data-path="{{ d.path }}" style="margin-bottom: var(--spacing-md);">
+    <div class="diff-item-header" style="padding: var(--spacing-md); cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center;" onclick="toggleDiffItem({{ loop.index0 }})" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleDiffItem({{ loop.index0 }})}" aria-label="Toggle diff item for {{ d.path }}" aria-expanded="true">
+      <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+        <span class="diff-toggle-icon" data-index="{{ loop.index0 }}" aria-hidden="true" style="transition: transform var(--transition-base);">⌄</span>
+        <code style="font-weight: var(--font-weight-medium);">{{ d.path }}</code>
+        <span class="badge diff-badge-{{ d.change }}">
+          {{ d.change|upper }}
+        </span>
+      </div>
+    </div>
+    <div class="diff-item-content" id="diff-content-{{ loop.index0 }}" style="display: none; padding: var(--spacing-md); border-top: 1px solid var(--color-border-light);">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--spacing-md);">
+        <div>
+          <div style="font-weight: var(--font-weight-medium); margin-bottom: var(--spacing-xs); color: var(--color-error);">
+            {% if d.change == 'removed' or d.change == 'changed' %}
+              From:
+            {% else %}
+              (Not in left)
+            {% endif %}
+          </div>
+          {% if 'from' in d %}
+          <div class="diff-value diff-removed" style="background: var(--color-error-light); padding: var(--spacing-sm); border-radius: var(--radius-sm); border-left: 3px solid var(--color-error);">
+            <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;">{{ d.from|tojson(indent=2) if d.from is not none else 'null' }}</pre>
+          </div>
+          {% endif %}
+        </div>
+        <div>
+          <div style="font-weight: var(--font-weight-medium); margin-bottom: var(--spacing-xs); color: var(--color-success);">
+            {% if d.change == 'added' or d.change == 'changed' %}
+              To:
+            {% else %}
+              (Not in right)
+            {% endif %}
+          </div>
+          {% if 'to' in d %}
+          <div class="diff-value diff-added" style="background: var(--color-success-light); padding: var(--spacing-sm); border-radius: var(--radius-sm); border-left: 3px solid var(--color-success);">
+            <pre style="margin: 0; white-space: pre-wrap; word-break: break-word;">{{ d.to|tojson(indent=2) if d.to is not none else 'null' }}</pre>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      <div style="margin-top: var(--spacing-sm); display: flex; gap: var(--spacing-xs);">
+        <button class="btn btn-sm" onclick="copyDiffValue('{{ loop.index0 }}', 'from')" style="padding: 2px 6px; min-height: auto;">
+          <span aria-hidden="true">📋</span> Copy From
+        </button>
+        <button class="btn btn-sm" onclick="copyDiffValue('{{ loop.index0 }}', 'to')" style="padding: 2px 6px; min-height: auto;">
+          <span aria-hidden="true">📋</span> Copy To
+        </button>
+      </div>
+    </div>
+  </div>
   {% endfor %}
-  </tbody>
-</table>
+</div>
+
+{% else %}
+<!-- No Differences -->
+<div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl);">
+  <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+    No differences found
+  </p>
+  <p style="color: var(--color-text-tertiary);">
+    The two baselines are identical.
+  </p>
+</div>
+{% endif %}
+
+<script>
+// Store diff data
+const diffData = {{ diff|tojson }};
+const leftContent = {{ left.content|tojson }};
+const rightContent = {{ right.content|tojson }};
+
+// Initialize diff counts
+function updateDiffCounts() {
+  const added = diffData.filter(d => d.change === 'added').length;
+  const removed = diffData.filter(d => d.change === 'removed').length;
+  const changed = diffData.filter(d => d.change === 'changed').length;
+  
+  document.getElementById('added-count').textContent = added;
+  document.getElementById('removed-count').textContent = removed;
+  document.getElementById('changed-count').textContent = changed;
+}
+
+// Render JSON with syntax highlighting
+function renderJSON(element, data, diffs) {
+  const jsonStr = JSON.stringify(data, null, 2);
+  const lines = jsonStr.split('\n');
+  let html = '';
+  
+  lines.forEach((line, index) => {
+    const lineNum = index + 1;
+    let className = 'json-line';
+    let style = '';
+    
+    // Check if this line is part of a diff
+    // Simple highlighting based on content
+    if (diffs) {
+      diffs.forEach(diff => {
+        const pathParts = diff.path.split('.');
+        // Simple check - could be enhanced
+        if (jsonStr.includes(diff.path)) {
+          if (diff.change === 'added') {
+            className += ' diff-added-line';
+            style = 'background: var(--color-success-light);';
+          } else if (diff.change === 'removed') {
+            className += ' diff-removed-line';
+            style = 'background: var(--color-error-light);';
+          } else if (diff.change === 'changed') {
+            className += ' diff-changed-line';
+            style = 'background: var(--color-warning-light);';
+          }
+        }
+      });
+    }
+    
+    html += `<div class="${className}" style="${style}"><span class="line-number">${lineNum}</span>${escapeHtml(line)}</div>`;
+  });
+  
+  element.innerHTML = html;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Synchronized scrolling
+let isScrolling = false;
+document.getElementById('left-content').addEventListener('scroll', function() {
+  if (!isScrolling) {
+    isScrolling = true;
+    const rightContent = document.getElementById('right-content');
+    rightContent.scrollTop = this.scrollTop;
+    rightContent.scrollLeft = this.scrollLeft;
+    setTimeout(() => { isScrolling = false; }, 10);
+  }
+});
+
+document.getElementById('right-content').addEventListener('scroll', function() {
+  if (!isScrolling) {
+    isScrolling = true;
+    const leftContent = document.getElementById('left-content');
+    leftContent.scrollTop = this.scrollTop;
+    leftContent.scrollLeft = this.scrollLeft;
+    setTimeout(() => { isScrolling = false; }, 10);
+  }
+});
+
+// Toggle diff items
+function toggleDiffItem(index) {
+  const content = document.getElementById(`diff-content-${index}`);
+  const icon = document.querySelector(`.diff-toggle-icon[data-index="${index}"]`);
+  const isVisible = content.style.display !== 'none';
+  
+  content.style.display = isVisible ? 'none' : 'block';
+  if (icon) {
+    icon.textContent = isVisible ? '⌄' : '⌃';
+    icon.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
+  }
+}
+
+function expandAllDiffs() {
+  document.querySelectorAll('.diff-item-content').forEach(el => {
+    el.style.display = 'block';
+  });
+  document.querySelectorAll('.diff-toggle-icon').forEach(el => {
+    el.textContent = '⌃';
+    el.style.transform = 'rotate(-90deg)';
+  });
+}
+
+function collapseAllDiffs() {
+  document.querySelectorAll('.diff-item-content').forEach(el => {
+    el.style.display = 'none';
+  });
+  document.querySelectorAll('.diff-toggle-icon').forEach(el => {
+    el.textContent = '⌄';
+    el.style.transform = 'rotate(0deg)';
+  });
+}
+
+// Filter diffs
+function filterDiffs() {
+  const search = document.getElementById('diff-search').value.toLowerCase();
+  const filterType = document.getElementById('diff-filter-type').value;
+  
+  document.querySelectorAll('.diff-item').forEach(item => {
+    const path = item.getAttribute('data-path').toLowerCase();
+    const changeType = item.getAttribute('data-change-type');
+    const content = item.textContent.toLowerCase();
+    
+    let show = true;
+    
+    if (search && !path.includes(search) && !content.includes(search)) {
+      show = false;
+    }
+    
+    if (filterType && changeType !== filterType) {
+      show = false;
+    }
+    
+    item.style.display = show ? '' : 'none';
+  });
+  
+  // Update path links visibility
+  document.querySelectorAll('.diff-path-link').forEach(link => {
+    const item = document.querySelector(`#${link.getAttribute('onclick').match(/'([^']+)'/)[1]}`);
+    link.style.display = item && item.style.display !== 'none' ? '' : 'none';
+  });
+}
+
+// Scroll to diff
+function scrollToDiff(id) {
+  const element = document.getElementById(id);
+  if (element) {
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Highlight briefly
+    element.style.transition = 'background-color 0.3s';
+    element.style.backgroundColor = 'var(--color-primary-light)';
+    setTimeout(() => {
+      element.style.backgroundColor = '';
+    }, 2000);
+  }
+}
+
+// Copy diff value
+function copyDiffValue(index, type) {
+  const diff = diffData[index];
+  let value;
+  
+  if (type === 'from' && 'from' in diff) {
+    value = JSON.stringify(diff.from, null, 2);
+  } else if (type === 'to' && 'to' in diff) {
+    value = JSON.stringify(diff.to, null, 2);
+  } else {
+    showToast('No value to copy', 'warning');
+    return;
+  }
+  
+  copyToClipboard(value);
+}
+
+// Export comparison
+function exportComparison(format) {
+  if (format === 'json') {
+    const data = {
+      left: { id: '{{ left.id }}', name: '{{ left.name }}', content: leftContent },
+      right: { id: '{{ right.id }}', name: '{{ right.name }}', content: rightContent },
+      diff: diffData,
+      exported_at: new Date().toISOString()
+    };
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `baseline-comparison-${Date.now()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } else {
+    // Text format
+    let text = `Baseline Comparison\n`;
+    text += `Left: {{ left.name }} ({{ left.id }})\n`;
+    text += `Right: {{ right.name }} ({{ right.id }})\n`;
+    text += `Exported: ${new Date().toISOString()}\n\n`;
+    text += `Total Differences: ${diffData.length}\n\n`;
+    
+    diffData.forEach((d, i) => {
+      text += `${i + 1}. ${d.path} [${d.change.toUpperCase()}]\n`;
+      if ('from' in d) {
+        text += `   From: ${JSON.stringify(d.from)}\n`;
+      }
+      if ('to' in d) {
+        text += `   To: ${JSON.stringify(d.to)}\n`;
+      }
+      text += '\n';
+    });
+    
+    const dataBlob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `baseline-comparison-${Date.now()}.txt`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+  
+  showToast(`Comparison exported as ${format.toUpperCase()}`, 'success');
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+  updateDiffCounts();
+  renderJSON(document.getElementById('left-json'), leftContent, diffData);
+  renderJSON(document.getElementById('right-json'), rightContent, diffData);
+});
+</script>
+
+<style>
+.diff-badge-added {
+  background: var(--color-success-light);
+  color: var(--color-success);
+}
+
+.diff-badge-removed {
+  background: var(--color-error-light);
+  color: var(--color-error);
+}
+
+.diff-badge-changed {
+  background: var(--color-warning-light);
+  color: var(--color-warning);
+}
+
+.json-line {
+  display: flex;
+  padding: 2px 0;
+  line-height: 1.5;
+}
+
+.line-number {
+  display: inline-block;
+  width: 40px;
+  color: var(--color-text-tertiary);
+  text-align: right;
+  padding-right: var(--spacing-sm);
+  user-select: none;
+  font-size: var(--font-size-xs);
+}
+
+.diff-path-link:hover {
+  background: var(--color-primary-light);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+@media (max-width: 1023px) {
+  .comparison-container {
+    grid-template-columns: 1fr;
+  }
+  
+  .baseline-info-cards {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/utils.js" defer></script>
 {% endblock %}

@@ -9,12 +9,21 @@
   <link rel="stylesheet" href="/static/css/main.css" />
   <link rel="stylesheet" href="/static/css/components.css" />
   <link rel="stylesheet" href="/static/css/responsive.css" />
+  <link rel="stylesheet" href="/static/css/loading.css" />
+  <link rel="stylesheet" href="/static/css/print.css" media="print" />
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   
   {% block extra_head %}{% endblock %}
 </head>
 <body>
   <!-- Skip link for keyboard navigation -->
-  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <a href="#main-content" class="skip-link" aria-label="Skip to main content">Skip to main content</a>
+  
+  <!-- ARIA Live Regions for screen reader announcements -->
+  <div id="aria-live-polite" role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+  <div id="aria-live-assertive" role="alert" aria-live="assertive" aria-atomic="true" class="sr-only"></div>
 
   <!-- Header -->
   <header role="banner" style="background-color: var(--color-bg-primary); border-bottom: 1px solid var(--color-border-light); position: sticky; top: 0; z-index: var(--z-index-sticky);">
@@ -62,17 +71,25 @@
         {% block user_menu %}
         {% if request and request.cookies.get('ss_session') %}
           <div class="user-menu" style="position: relative;">
-            <button class="user-menu-toggle" aria-label="User menu" aria-expanded="false" 
+            <button class="user-menu-toggle" 
+                    data-dropdown="user-menu-dropdown"
+                    aria-label="User menu" 
+                    aria-expanded="false" 
                     style="display: flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: none; border: 1px solid var(--color-border-light); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast);">
               <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
                 {% if user.name %}{{ user.name }}{% else %}User{% endif %}
               </span>
               <span class="icon icon-chevron-down icon-sm" aria-hidden="true"></span>
             </button>
-            <div class="user-menu-dropdown" style="display: none; position: absolute; top: 100%; right: 0; margin-top: var(--spacing-xs); background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; z-index: var(--z-index-dropdown);">
+            <div id="user-menu-dropdown" class="user-menu-dropdown" 
+                 role="menu"
+                 aria-hidden="true"
+                 style="display: none; position: absolute; top: 100%; right: 0; margin-top: var(--spacing-xs); background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; z-index: var(--z-index-dropdown);">
               <ul style="list-style: none; margin: 0; padding: var(--spacing-xs);">
                 <li>
-                  <a href="/logout" style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">
+                  <a href="/logout" 
+                     role="menuitem"
+                     style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">
                     Logout
                   </a>
                 </li>
@@ -83,6 +100,20 @@
           <a href="/login" class="btn btn-primary btn-sm">Login</a>
         {% endif %}
         {% endblock %}
+      </div>
+
+      <!-- Global Search (Mobile) -->
+      <div class="global-search-mobile" style="display: none; flex: 1; margin: 0 var(--spacing-sm);">
+        <form id="global-search-form-mobile" method="get" action="/" style="display: flex; width: 100%;">
+          <input 
+            type="search" 
+            id="global-search-input-mobile"
+            name="search"
+            class="form-input" 
+            placeholder="Search..."
+            aria-label="Global search"
+            style="flex: 1; margin: 0; font-size: var(--font-size-sm);">
+        </form>
       </div>
 
       <!-- Mobile Navigation Toggle -->
@@ -194,7 +225,14 @@
   </footer>
 
   <!-- JavaScript for mobile navigation and other interactions -->
-  <script src="/static/js/navigation.js" defer></script>
+    <script src="/static/js/navigation.js" defer></script>
+    <script src="/static/js/modal.js" defer></script>
+    <script src="/static/js/toast.js" defer></script>
+    <script src="/static/js/dropdown.js" defer></script>
+    <script src="/static/js/tabs.js" defer></script>
+    <script src="/static/js/realtime.js" defer></script>
+    <script src="/static/js/filtering.js" defer></script>
+    <script src="/static/js/accessibility.js" defer></script>
   {% block extra_scripts %}{% endblock %}
 </body>
 </html>

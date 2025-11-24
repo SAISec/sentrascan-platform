@@ -1,41 +1,418 @@
 {% extends "base.html" %}
+
+{% block title %}Run Scan - SentraScan Platform{% endblock %}
+
 {% block content %}
-<h2>Run Scan</h2>
-<div style="display:flex; gap:2rem; align-items:flex-start; flex-wrap:wrap;">
-  <div style="flex:1; min-width:360px;">
-    <h3>Model Scan</h3>
-<form method="post" action="/ui/scan/model">
-      <label>Model Path (container path)<br><input type="text" name="model_path" value="/data/sample.npy" style="width:100%" /></label><br>
-      <label><input type="checkbox" name="strict" checked /> Strict Mode</label><br>
-      <label><input type="checkbox" name="generate_sbom" checked /> Generate SBOM</label><br>
-      <details>
-        <summary>Advanced</summary>
-        <label>Policy Path (optional)<br><input type="text" name="policy" value=".sentrascan.yaml" style="width:100%" /></label>
-        <label><input type="checkbox" name="run_async" /> Run asynchronously</label>
-      </details>
-      <button type="submit">Run Model Scan</button>
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<div class="page-header" style="margin-bottom: var(--spacing-xl);">
+  <div>
+    <h1 style="margin: 0 0 var(--spacing-xs) 0;">Run Scan</h1>
+    <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+      Configure and execute a security scan
+    </p>
+  </div>
+</div>
+
+<!-- Tabbed Interface -->
+<div class="scan-form-container">
+  <div class="tabs" role="tablist" style="display: flex; gap: var(--spacing-xs); border-bottom: 2px solid var(--color-border-light); margin-bottom: var(--spacing-xl);">
+    <button 
+      class="tab-button active" 
+      role="tab" 
+      aria-selected="true" 
+      aria-controls="model-tab-panel"
+      id="model-tab"
+      onclick="switchTab('model')"
+      onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchTab('model'); }"
+      style="padding: var(--spacing-md) var(--spacing-lg); background: none; border: none; border-bottom: 3px solid var(--color-primary); color: var(--color-primary); font-weight: var(--font-weight-medium); cursor: pointer; transition: all var(--transition-base);">
+      Model Scan
+    </button>
+    <button 
+      class="tab-button" 
+      role="tab" 
+      aria-selected="false" 
+      aria-controls="mcp-tab-panel"
+      id="mcp-tab"
+      onclick="switchTab('mcp')"
+      onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); switchTab('mcp'); }"
+      style="padding: var(--spacing-md) var(--spacing-lg); background: none; border: none; border-bottom: 3px solid transparent; color: var(--color-text-secondary); font-weight: var(--font-weight-medium); cursor: pointer; transition: all var(--transition-base);">
+      MCP Scan
+    </button>
+  </div>
+
+  <!-- Model Scan Form -->
+  <div id="model-tab-panel" role="tabpanel" aria-labelledby="model-tab" class="tab-panel active">
+    <form id="model-scan-form" method="post" action="/ui/scan/model" class="scan-form" novalidate>
+      <fieldset>
+        <legend class="sr-only">Model scan configuration</legend>
+        <!-- Basic Settings Section -->
+        <div class="form-section card" style="margin-bottom: var(--spacing-lg);">
+          <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-lg);">Basic Settings</h3>
+        
+        <div class="form-group">
+          <label for="model_path" class="form-label">
+            Model Path <span class="required-indicator" aria-label="required">*</span>
+          </label>
+          <input 
+            type="text" 
+            id="model_path" 
+            name="model_path" 
+            class="form-input" 
+            value="/data/sample.npy"
+            required
+            aria-required="true"
+            aria-describedby="model_path_help model_path_error"
+            aria-invalid="false"
+            placeholder="Enter the container path to the model file">
+          <div id="model_path_help" class="form-help-text">
+            The container path to the model file (e.g., /data/sample.npy)
+          </div>
+          <div id="model_path_error" class="form-error-message" role="alert" aria-live="polite"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="model_strict" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+            <input 
+              type="checkbox" 
+              id="model_strict"
+              name="strict" 
+              checked
+              class="form-checkbox"
+              aria-describedby="model_strict_help">
+            <span>Strict Mode</span>
+          </label>
+          <div id="model_strict_help" class="form-help-text">
+            Enable stricter security checks and validation rules
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="model_generate_sbom" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+            <input 
+              type="checkbox" 
+              id="model_generate_sbom"
+              name="generate_sbom" 
+              checked
+              class="form-checkbox"
+              aria-describedby="model_generate_sbom_help">
+            <span>Generate SBOM</span>
+          </label>
+          <div id="model_generate_sbom_help" class="form-help-text">
+            Generate a Software Bill of Materials for the scanned model
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced Settings Section -->
+      <div class="form-section card">
+        <details class="advanced-section">
+          <summary class="advanced-summary" style="cursor: pointer; padding: var(--spacing-md); font-weight: var(--font-weight-medium); user-select: none;">
+            <span>Advanced Settings</span>
+            <span class="advanced-icon" aria-hidden="true" style="float: right;">⌄</span>
+          </summary>
+          
+          <div class="advanced-content" style="padding: var(--spacing-md); border-top: 1px solid var(--color-border-light);">
+            <div class="form-group">
+              <label for="model_policy" class="form-label">
+                Policy Path
+              </label>
+              <input 
+                type="text" 
+                id="model_policy" 
+                name="policy" 
+                class="form-input" 
+                value=".sentrascan.yaml"
+                aria-describedby="model_policy_help"
+                placeholder=".sentrascan.yaml">
+              <div id="model_policy_help" class="form-help-text">
+                Optional path to a custom policy file. Defaults to .sentrascan.yaml if not specified.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="model_run_async" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                <input 
+                  type="checkbox" 
+                  id="model_run_async"
+                  name="run_async" 
+                  class="form-checkbox"
+                  aria-describedby="model_run_async_help">
+                <span>Run Asynchronously</span>
+              </label>
+              <div id="model_run_async_help" class="form-help-text">
+                Queue the scan for background processing. Useful for large models.
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="form-actions" style="margin-top: var(--spacing-xl); display: flex; gap: var(--spacing-md); align-items: center;">
+        <button 
+          type="submit" 
+          class="btn btn-primary"
+          id="model-submit-btn"
+          aria-busy="false">
+          <span class="submit-text">Run Model Scan</span>
+          <span class="submit-spinner spinner spinner-sm" style="display: none; margin-left: var(--spacing-xs);" aria-hidden="true"></span>
+        </button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+      </div>
     </form>
   </div>
-  <div style="flex:1; min-width:360px;">
-<h3>MCP Scan</h3>
-    <p>Known config locations (auto-discover scans these):</p>
-    <ul>
-      <li>macOS: ~/Library/Application Support/Claude/</li>
-      <li>Linux: ~/.config/Claude/, ~/.cursor/mcp.json, ~/.codeium/windsurf/mcp_config.json, ~/.vscode/mcp.json</li>
-      <li>Windows: %APPDATA%\Claude\, %USERPROFILE%\.cursor\mcp.json, %USERPROFILE%\.codeium\windsurf\mcp_config.json, %USERPROFILE%\.vscode\mcp.json</li>
-    </ul>
-<form method="post" action="/ui/scan/mcp">
-      <label><input type="checkbox" name="auto_discover" checked /> Auto-discover known configs</label><br>
-      <details>
-        <summary>Advanced</summary>
-        <label>Config Paths (one path per line)<br>
-          <textarea name="config_paths" rows="4" style="width:100%"></textarea>
-        </label>
-        <label>Policy Path (optional)<br><input type="text" name="policy" value=".sentrascan.yaml" style="width:100%" /></label>
-        <label><input type="checkbox" name="run_async" /> Run asynchronously</label>
-      </details>
-      <button type="submit">Run MCP Scan</button>
+
+  <!-- MCP Scan Form -->
+  <div id="mcp-tab-panel" role="tabpanel" aria-labelledby="mcp-tab" class="tab-panel" style="display: none;">
+    <div class="info-card card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md); background: var(--color-info-light); border-left: 4px solid var(--color-info);">
+      <h4 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-base);">Known Config Locations</h4>
+      <p style="margin: 0; font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+        Auto-discover will scan these locations automatically:
+      </p>
+      <ul style="margin: var(--spacing-sm) 0 0 0; padding-left: var(--spacing-lg); font-size: var(--font-size-sm);">
+        <li><strong>macOS:</strong> ~/Library/Application Support/Claude/</li>
+        <li><strong>Linux:</strong> ~/.config/Claude/, ~/.cursor/mcp.json, ~/.codeium/windsurf/mcp_config.json, ~/.vscode/mcp.json</li>
+        <li><strong>Windows:</strong> %APPDATA%\Claude\, %USERPROFILE%\.cursor\mcp.json, %USERPROFILE%\.codeium\windsurf\mcp_config.json, %USERPROFILE%\.vscode\mcp.json</li>
+      </ul>
+    </div>
+
+    <form id="mcp-scan-form" method="post" action="/ui/scan/mcp" class="scan-form" novalidate>
+      <!-- Basic Settings Section -->
+      <div class="form-section card" style="margin-bottom: var(--spacing-lg);">
+        <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-lg);">Basic Settings</h3>
+        
+        <div class="form-group">
+          <label for="mcp_auto_discover" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+            <input 
+              type="checkbox" 
+              id="mcp_auto_discover"
+              name="auto_discover" 
+              checked
+              class="form-checkbox"
+              aria-describedby="mcp_auto_discover_help">
+            <span>Auto-discover Known Configs</span>
+          </label>
+          <div id="mcp_auto_discover_help" class="form-help-text">
+            Automatically scan known configuration file locations for MCP servers
+          </div>
+        </div>
+      </div>
+
+      <!-- Advanced Settings Section -->
+      <div class="form-section card">
+        <details class="advanced-section" open>
+          <summary class="advanced-summary" style="cursor: pointer; padding: var(--spacing-md); font-weight: var(--font-weight-medium); user-select: none;">
+            <span>Advanced Settings</span>
+            <span class="advanced-icon" aria-hidden="true" style="float: right;">⌄</span>
+          </summary>
+          
+          <div class="advanced-content" style="padding: var(--spacing-md); border-top: 1px solid var(--color-border-light);">
+            <div class="form-group">
+              <label for="mcp_config_paths" class="form-label">
+                Config Paths
+              </label>
+              <textarea 
+                id="mcp_config_paths" 
+                name="config_paths" 
+                class="form-textarea" 
+                rows="4"
+                aria-describedby="mcp_config_paths_help"
+                placeholder="Enter one path per line&#10;Example:&#10;/path/to/config.json&#10;~/custom/mcp.json"></textarea>
+              <div id="mcp_config_paths_help" class="form-help-text">
+                Specify custom configuration file paths, one per line. Leave empty to use auto-discover only.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="mcp_policy" class="form-label">
+                Policy Path
+              </label>
+              <input 
+                type="text" 
+                id="mcp_policy" 
+                name="policy" 
+                class="form-input" 
+                value=".sentrascan.yaml"
+                aria-describedby="mcp_policy_help"
+                placeholder=".sentrascan.yaml">
+              <div id="mcp_policy_help" class="form-help-text">
+                Optional path to a custom policy file. Defaults to .sentrascan.yaml if not specified.
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="mcp_run_async" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                <input 
+                  type="checkbox" 
+                  id="mcp_run_async"
+                  name="run_async" 
+                  class="form-checkbox"
+                  aria-describedby="mcp_run_async_help">
+                <span>Run Asynchronously</span>
+              </label>
+              <div id="mcp_run_async_help" class="form-help-text">
+                Queue the scan for background processing. Useful for multiple config files.
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="form-actions" style="margin-top: var(--spacing-xl); display: flex; gap: var(--spacing-md); align-items: center;">
+        <button 
+          type="submit" 
+          class="btn btn-primary"
+          id="mcp-submit-btn"
+          aria-busy="false">
+          <span class="submit-text">Run MCP Scan</span>
+          <span class="submit-spinner spinner spinner-sm" style="display: none; margin-left: var(--spacing-xs);" aria-hidden="true"></span>
+        </button>
+        <a href="/" class="btn btn-secondary">Cancel</a>
+      </div>
+      </fieldset>
     </form>
   </div>
 </div>
+
+<script>
+// ============================================
+// Tab Switching
+// ============================================
+
+function switchTab(tabName) {
+  // Hide all panels
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.style.display = 'none';
+    panel.classList.remove('active');
+  });
+  
+  // Remove active class from all buttons
+  document.querySelectorAll('.tab-button').forEach(button => {
+    button.classList.remove('active');
+    button.setAttribute('aria-selected', 'false');
+    button.style.borderBottomColor = 'transparent';
+    button.style.color = 'var(--color-text-secondary)';
+  });
+  
+  // Show selected panel
+  const panel = document.getElementById(tabName + '-tab-panel');
+  const button = document.getElementById(tabName + '-tab');
+  
+  if (panel && button) {
+    panel.style.display = 'block';
+    panel.classList.add('active');
+    button.classList.add('active');
+    button.setAttribute('aria-selected', 'true');
+    button.style.borderBottomColor = 'var(--color-primary)';
+    button.style.color = 'var(--color-primary)';
+  }
+}
+
+// ============================================
+// Form Validation
+// ============================================
+
+function validateModelForm() {
+  const form = document.getElementById('model-scan-form');
+  const modelPath = document.getElementById('model_path');
+  const errorDiv = document.getElementById('model_path_error');
+  
+  let isValid = true;
+  
+  // Clear previous errors
+  errorDiv.textContent = '';
+  modelPath.classList.remove('form-input-error');
+  
+  // Validate model path
+  if (!modelPath.value.trim()) {
+    errorDiv.textContent = 'Model path is required';
+    modelPath.classList.add('form-input-error');
+    modelPath.setAttribute('aria-invalid', 'true');
+    isValid = false;
+  } else if (modelPath.value.trim().length < 3) {
+    errorDiv.textContent = 'Model path must be at least 3 characters';
+    modelPath.classList.add('form-input-error');
+    modelPath.setAttribute('aria-invalid', 'true');
+    isValid = false;
+  } else {
+    modelPath.setAttribute('aria-invalid', 'false');
+  }
+  
+  return isValid;
+}
+
+function validateMCPForm() {
+  // MCP form doesn't have required fields, so it's always valid
+  return true;
+}
+
+// ============================================
+// Form Submission with Loading State
+// ============================================
+
+function handleFormSubmit(formId, submitBtnId) {
+  const form = document.getElementById(formId);
+  const submitBtn = document.getElementById(submitBtnId);
+  const spinner = submitBtn.querySelector('.submit-spinner');
+  const submitText = submitBtn.querySelector('.submit-text');
+  
+  form.addEventListener('submit', function(e) {
+    // Validate form
+    let isValid = false;
+    if (formId === 'model-scan-form') {
+      isValid = validateModelForm();
+    } else {
+      isValid = validateMCPForm();
+    }
+    
+    if (!isValid) {
+      e.preventDefault();
+      return false;
+    }
+    
+    // Show loading state
+    submitBtn.disabled = true;
+    submitBtn.setAttribute('aria-busy', 'true');
+    spinner.style.display = 'inline-block';
+    submitText.textContent = submitText.textContent.replace('Run', 'Running');
+    
+    // Form will submit normally, server will handle redirect
+  });
+}
+
+// Initialize form handlers
+document.addEventListener('DOMContentLoaded', function() {
+  handleFormSubmit('model-scan-form', 'model-submit-btn');
+  handleFormSubmit('mcp-scan-form', 'mcp-submit-btn');
+  
+  // Handle advanced section toggle
+  document.querySelectorAll('.advanced-section').forEach(details => {
+    details.addEventListener('toggle', function() {
+      const icon = this.querySelector('.advanced-icon');
+      if (icon) {
+        icon.textContent = this.open ? '⌃' : '⌄';
+      }
+    });
+  });
+  
+  // Real-time validation for model path
+  const modelPath = document.getElementById('model_path');
+  if (modelPath) {
+    modelPath.addEventListener('blur', validateModelForm);
+    modelPath.addEventListener('input', function() {
+      if (this.classList.contains('form-input-error')) {
+        validateModelForm();
+      }
+    });
+  }
+});
+</script>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/utils.js" defer></script>
 {% endblock %}

@@ -31,9 +31,14 @@
   
   /* Semantic Colors */
   --color-success: #4CAF50;
+  --color-success-light: #E8F5E9;
   --color-error: #F44336;
+  --color-error-light: #FFEBEE;
+  --color-error-rgb: 244, 67, 54;
   --color-warning: #FF9800;
+  --color-warning-light: #FFF3E0;
   --color-info: #2196F3;
+  --color-info-light: #E3F2FD;
   
   /* Neutral Grays */
   --color-gray-50: #FAFAFA;
@@ -101,6 +106,11 @@
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* ========== Focus Styles ========== */
+  --focus-outline: 2px solid var(--color-primary);
+  --focus-outline-offset: 2px;
+  --focus-shadow: 0 0 0 3px rgba(33, 150, 243, 0.2);
   
   /* ========== Transitions ========== */
   --transition-fast: 150ms ease-in-out;
@@ -264,6 +274,99 @@ pre {
 .pb-md { padding-bottom: var(--spacing-md); }
 .pb-lg { padding-bottom: var(--spacing-lg); }
 .pb-xl { padding-bottom: var(--spacing-xl); }
+
+/* ============================================
+   Accessibility - Skip Links
+   ============================================ */
+
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  padding: var(--spacing-sm) var(--spacing-md);
+  text-decoration: none;
+  z-index: 10000;
+  border-radius: 0 0 var(--radius-md) 0;
+  font-weight: var(--font-weight-semibold);
+  transition: top var(--transition-fast);
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+}
+
+/* ============================================
+   Accessibility - Focus Indicators
+   ============================================ */
+
+/* Remove default outline and add custom focus styles */
+*:focus {
+  outline: none;
+}
+
+/* Focusable elements */
+a:focus,
+button:focus,
+input:focus,
+textarea:focus,
+select:focus,
+[tabindex]:focus {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--focus-shadow);
+}
+
+/* Focus styles for specific components */
+.btn:focus {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--focus-shadow);
+}
+
+.form-input:focus,
+.form-textarea:focus,
+.form-select:focus {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-offset);
+  box-shadow: var(--focus-shadow);
+  border-color: var(--color-primary);
+}
+
+/* Focus within for form groups */
+.form-group:focus-within label {
+  color: var(--color-primary);
+}
+
+/* ============================================
+   Screen Reader Only Content
+   ============================================ */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.sr-only-focusable:focus {
+  position: static;
+  width: auto;
+  height: auto;
+  padding: inherit;
+  margin: inherit;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+}
 
 /* ============================================
    Utility Classes (Additional)

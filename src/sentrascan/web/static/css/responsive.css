@@ -3,401 +3,117 @@
    ============================================ */
 
 /* ============================================
-   Responsive Breakpoints
-   ============================================
-
-   Mobile: < 768px (default, mobile-first)
-   Tablet: 768px - 1023px
-   Desktop: 1024px and above
-
+   Tablet Styles (max-width: 1023px)
    ============================================ */
 
-/* ============================================
-   Mobile-First Base Styles
-   ============================================
-
-   All base styles are mobile-first.
-   Use min-width media queries to enhance for larger screens.
-
-   ============================================ */
-
-/* ============================================
-   Tablet Styles (768px and above)
-   ============================================ */
-
-@media (min-width: 768px) {
-  /* Typography adjustments for tablet */
-  html {
-    font-size: 16px;
+@media (max-width: 1023px) {
+  .global-search-desktop {
+    display: none !important;
+  }
+  
+  .global-search-mobile {
+    display: flex !important;
   }
 
-  h1 {
-    font-size: var(--font-size-3xl);
+  .nav-desktop {
+    display: none;
   }
 
-  h2 {
-    font-size: var(--font-size-2xl);
+  .nav-mobile-toggle {
+    display: flex !important;
   }
 
-  h3 {
-    font-size: var(--font-size-xl);
+  .user-menu-desktop {
+    display: none !important;
   }
 
-  /* Container adjustments */
-  .container {
-    max-width: 720px;
-    margin: 0 auto;
-    padding: 0 var(--spacing-md);
-  }
-
-  /* Table improvements for tablet */
-  .table-container {
-    /* Better scrolling on tablet */
-  }
-
-  /* Card grid for tablet */
-  .card-grid {
-    display: grid;
+  .grid-4 {
     grid-template-columns: repeat(2, 1fr);
-    gap: var(--spacing-lg);
-  }
-}
-
-/* ============================================
-   Desktop Styles (1024px and above)
-   ============================================ */
-
-@media (min-width: 1024px) {
-  /* Typography adjustments for desktop */
-  html {
-    font-size: 16px;
   }
 
-  /* Container for desktop */
-  .container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 var(--spacing-lg);
+  .grid-3 {
+    grid-template-columns: repeat(2, 1fr);
   }
 
-  /* Multi-column layouts */
-  .card-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  .card-grid-4 {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  /* Sidebar layouts */
-  .layout-sidebar {
-    display: grid;
-    grid-template-columns: 250px 1fr;
-    gap: var(--spacing-xl);
-  }
-
-  /* Table improvements - no horizontal scroll needed */
-  .table-container {
-    overflow-x: visible;
-  }
-
-  /* Better spacing for desktop */
-  .section {
-    margin-bottom: var(--spacing-2xl);
-  }
-}
-
-/* ============================================
-   Large Desktop Styles (1280px and above)
-   ============================================ */
-
-@media (min-width: 1280px) {
-  .container {
-    max-width: 1400px;
-  }
-
-  .card-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-}
-
-/* ============================================
-   Utility Classes for Responsive Display
-   ============================================ */
-
-/* Hide on mobile, show on tablet+ */
-.hide-mobile {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .hide-mobile {
-    display: block;
-  }
-
-  .show-mobile {
-    display: none;
-  }
-}
-
-/* Hide on tablet, show on desktop+ */
-.hide-tablet {
-  display: block;
-}
-
-@media (min-width: 768px) and (max-width: 1023px) {
-  .hide-tablet {
-    display: none;
-  }
-}
-
-@media (min-width: 1024px) {
-  .hide-tablet {
-    display: block;
-  }
-}
-
-/* Show only on mobile */
-.show-mobile-only {
-  display: block;
-}
-
-@media (min-width: 768px) {
-  .show-mobile-only {
-    display: none;
-  }
-}
-
-/* Show only on tablet */
-.show-tablet-only {
-  display: none;
-}
-
-@media (min-width: 768px) and (max-width: 1023px) {
-  .show-tablet-only {
-    display: block;
-  }
-}
-
-@media (min-width: 1024px) {
-  .show-tablet-only {
-    display: none;
-  }
-}
-
-/* Show only on desktop */
-.show-desktop-only {
-  display: none;
-}
-
-@media (min-width: 1024px) {
-  .show-desktop-only {
-    display: block;
-  }
-}
-
-/* ============================================
-   Responsive Typography
-   ============================================ */
-
-@media (max-width: 767px) {
-  /* Slightly smaller headings on mobile */
-  h1 {
+  .stat-card-value {
     font-size: var(--font-size-2xl);
   }
 
-  h2 {
+  .stat-card-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .charts-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* ============================================
+   Mobile Styles (max-width: 767px)
+   ============================================ */
+
+@media (max-width: 767px) {
+  .page-header h1 {
     font-size: var(--font-size-xl);
   }
 
-  h3 {
-    font-size: var(--font-size-lg);
+  .grid-4,
+  .grid-3,
+  .grid-2 {
+    grid-template-columns: 1fr;
   }
-}
 
-/* ============================================
-   Responsive Tables
-   ============================================ */
+  .stat-card-value {
+    font-size: var(--font-size-xl);
+  }
 
-@media (max-width: 767px) {
-  /* Stack table on mobile */
-  .table-responsive {
-    display: block;
-    width: 100%;
+  .stat-card-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .table-container {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
 
-  .table-responsive .table {
-    min-width: 600px; /* Minimum width to maintain readability */
+  .table {
+    min-width: 600px;
   }
 
-  /* Alternative: Card-based table on mobile */
-  .table-card-mobile {
-    display: block;
-  }
-
-  .table-card-mobile thead {
-    display: none;
-  }
-
-  .table-card-mobile tbody,
-  .table-card-mobile tr,
-  .table-card-mobile td {
-    display: block;
-    width: 100%;
-  }
-
-  .table-card-mobile tr {
-    margin-bottom: var(--spacing-md);
-    border: 1px solid var(--color-border-light);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    background-color: var(--color-bg-primary);
-  }
-
-  .table-card-mobile td {
-    border: none;
-    padding: var(--spacing-xs) 0;
-    text-align: left;
-  }
-
-  .table-card-mobile td::before {
-    content: attr(data-label) ": ";
-    font-weight: var(--font-weight-semibold);
-    display: inline-block;
-    min-width: 100px;
-  }
-}
-
-/* ============================================
-   Responsive Forms
-   ============================================ */
-
-@media (max-width: 767px) {
-  /* Full width inputs on mobile */
-  .form-input,
-  .form-textarea,
-  .form-select {
-    width: 100%;
-  }
-
-  /* Stack form groups vertically */
-  .form-row {
+  .form-actions {
     flex-direction: column;
   }
 
-  .form-row .form-group {
+  .form-actions .btn {
     width: 100%;
-    margin-right: 0;
-  }
-}
-
-@media (min-width: 768px) {
-  /* Horizontal form layout on tablet+ */
-  .form-row {
-    display: flex;
-    gap: var(--spacing-md);
   }
 
-  .form-row .form-group {
-    flex: 1;
-  }
-}
-
-/* ============================================
-   Responsive Navigation
-   ============================================ */
-
-@media (max-width: 767px) {
-  /* Mobile navigation handled by JavaScript */
-  .nav-desktop {
-    display: none;
+  .comparison-container {
+    grid-template-columns: 1fr !important;
   }
 
-  .nav-mobile-toggle {
-    display: block;
-  }
-}
-
-@media (min-width: 768px) {
-  .nav-desktop {
-    display: flex;
+  .baseline-info-cards {
+    grid-template-columns: 1fr !important;
   }
 
-  .nav-mobile-toggle {
-    display: none;
+  .charts-grid {
+    grid-template-columns: 1fr !important;
   }
 
-  .nav-mobile-drawer {
-    display: none;
-  }
-}
-
-/* ============================================
-   Responsive Grid System
-   ============================================ */
-
-.grid {
-  display: grid;
-  gap: var(--spacing-md);
-}
-
-.grid-1 {
-  grid-template-columns: 1fr;
-}
-
-.grid-2 {
-  grid-template-columns: repeat(2, 1fr);
-}
-
-.grid-3 {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.grid-4 {
-  grid-template-columns: repeat(4, 1fr);
-}
-
-@media (max-width: 767px) {
-  .grid-2,
-  .grid-3,
-  .grid-4 {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (min-width: 768px) and (max-width: 1023px) {
-  .grid-3,
-  .grid-4 {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* ============================================
-   Responsive Spacing Utilities
-   ============================================ */
-
-@media (max-width: 767px) {
-  /* Reduce spacing on mobile */
-  .section {
-    padding: var(--spacing-md);
+  .chart-card {
+    padding: var(--spacing-md) !important;
   }
 
-  .container {
-    padding: 0 var(--spacing-sm);
+  .chart-card h3 {
+    font-size: var(--font-size-sm);
+  }
+
+  .dashboard-filters .dashboard-filter-form {
+    flex-direction: column;
+  }
+
+  .dashboard-filters .form-group {
+    width: 100%;
   }
 }
-
-@media (min-width: 768px) {
-  .section {
-    padding: var(--spacing-lg);
-  }
-}
-
-@media (min-width: 1024px) {
-  .section {
-    padding: var(--spacing-xl);
-  }
-}
-

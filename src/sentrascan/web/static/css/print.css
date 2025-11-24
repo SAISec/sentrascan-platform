@@ -1,0 +1,166 @@
+/* ============================================
+   SentraScan Platform - Print Styles
+   ============================================ */
+
+@media print {
+  /* Hide non-essential elements */
+  header,
+  footer,
+  nav,
+  .btn,
+  .filter-section,
+  .dashboard-filters,
+  .export-dropdown,
+  .breadcrumb,
+  .skip-link,
+  .nav-mobile-toggle,
+  .user-menu,
+  .global-search-desktop,
+  .global-search-mobile {
+    display: none !important;
+  }
+
+  /* Page setup */
+  @page {
+    margin: 1cm;
+    size: A4;
+  }
+
+  body {
+    font-size: 12pt;
+    line-height: 1.5;
+    color: #000;
+    background: #fff;
+  }
+
+  /* Typography */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    color: #000;
+  }
+
+  h1 {
+    font-size: 18pt;
+    margin-bottom: 12pt;
+  }
+
+  h2 {
+    font-size: 16pt;
+    margin-bottom: 10pt;
+  }
+
+  h3 {
+    font-size: 14pt;
+    margin-bottom: 8pt;
+  }
+
+  /* Links */
+  a {
+    color: #000;
+    text-decoration: underline;
+  }
+
+  a[href^="http"]:after {
+    content: " (" attr(href) ")";
+    font-size: 10pt;
+    color: #666;
+  }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tbody {
+    display: table-row-group;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  th, td {
+    border: 1px solid #000;
+    padding: 6pt;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Cards */
+  .card {
+    border: 1px solid #000;
+    padding: 12pt;
+    margin-bottom: 12pt;
+    page-break-inside: avoid;
+  }
+
+  /* Badges */
+  .badge {
+    border: 1px solid #000;
+    padding: 2pt 6pt;
+    display: inline-block;
+  }
+
+  /* Charts - hide or show as image */
+  canvas {
+    display: none;
+  }
+
+  .chart-card::after {
+    content: "[Chart data not printable]";
+    font-style: italic;
+    color: #666;
+  }
+
+  /* Statistics */
+  .stat-card {
+    page-break-inside: avoid;
+    border: 1px solid #000;
+    padding: 8pt;
+    margin-bottom: 8pt;
+  }
+
+  /* Findings */
+  .findings-group {
+    page-break-inside: avoid;
+    margin-bottom: 12pt;
+  }
+
+  /* Avoid breaking inside important sections */
+  .scan-header,
+  .findings-summary {
+    page-break-inside: avoid;
+  }
+
+  /* Show URLs for links */
+  a[href]:not([href^="#"]):not([href^="javascript:"])::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+    color: #666;
+  }
+
+  /* Print page breaks */
+  .page-break {
+    page-break-before: always;
+  }
+
+  /* Ensure sufficient contrast */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+

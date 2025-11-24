@@ -100,101 +100,101 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 2.18 Create backend endpoint for dashboard statistics (`/api/v1/dashboard/stats`)
 
 - [ ] 3.0 Scan Pages Enhancement (List, Detail, Forms)
-  - [ ] 3.1 Enhance `index.html` (scan list) with modern table design and hover effects
-  - [ ] 3.2 Implement sortable table columns (Time, Type, Target, Status, Severity counts)
-  - [ ] 3.3 Add status badges with icons (completed, queued, running, failed)
-  - [ ] 3.4 Implement tooltip component for truncated target paths
-  - [ ] 3.5 Create advanced filtering UI (scan type, status, date range, severity threshold, search)
-  - [ ] 3.6 Implement pagination component with page size selector, prev/next, page numbers, total count
-  - [ ] 3.7 Add clickable table rows that navigate to scan details
-  - [ ] 3.8 Enhance `scan_detail.html` with comprehensive header section (ID, timestamp, type, status, target path)
-  - [ ] 3.9 Add copy-to-clipboard button for scan ID and target path
-  - [ ] 3.10 Create severity summary section with cards or bars
-  - [ ] 3.11 Add action buttons (Download JSON Report, Download SBOM, Compare with Baseline)
-  - [ ] 3.12 Implement findings table with expandable rows for full details
-  - [ ] 3.13 Create findings grouping by severity with collapsible sections
-  - [ ] 3.14 Add "Expand/Collapse All" functionality for findings groups
-  - [ ] 3.15 Implement findings filtering (severity, category, scanner, search)
-  - [ ] 3.16 Add findings sorting (severity, category, scanner, title)
-  - [ ] 3.17 Create finding detail view with formatted description, location, evidence, remediation
-  - [ ] 3.18 Add copy-to-clipboard for individual finding data
-  - [ ] 3.19 Implement bulk selection for findings (optional)
-  - [ ] 3.20 Enhance `scan_forms.html` with tabbed interface for Model vs MCP scans
-  - [ ] 3.21 Add form sections with visual separation and inline help text
-  - [ ] 3.22 Implement form field validation with clear error messages
-  - [ ] 3.23 Add form field states (required indicators, validation errors, disabled states)
-  - [ ] 3.24 Create collapsible "Advanced" sections for optional fields
-  - [ ] 3.25 Implement loading states during form submission
-  - [ ] 3.26 Add redirect to scan detail page after successful submission
+  - [x] 3.1 Enhance `index.html` (scan list) with modern table design and hover effects
+  - [x] 3.2 Implement sortable table columns (Time, Type, Target, Status, Severity counts)
+  - [x] 3.3 Add status badges with icons (completed, queued, running, failed)
+  - [x] 3.4 Implement tooltip component for truncated target paths
+  - [x] 3.5 Create advanced filtering UI (scan type, status, date range, severity threshold, search)
+  - [x] 3.6 Implement pagination component with page size selector, prev/next, page numbers, total count
+  - [x] 3.7 Add clickable table rows that navigate to scan details
+  - [x] 3.8 Enhance `scan_detail.html` with comprehensive header section (ID, timestamp, type, status, target path)
+  - [x] 3.9 Add copy-to-clipboard button for scan ID and target path
+  - [x] 3.10 Create severity summary section with cards or bars
+  - [x] 3.11 Add action buttons (Download JSON Report, Download SBOM, Compare with Baseline)
+  - [x] 3.12 Implement findings table with expandable rows for full details
+  - [x] 3.13 Create findings grouping by severity with collapsible sections
+  - [x] 3.14 Add "Expand/Collapse All" functionality for findings groups
+  - [x] 3.15 Implement findings filtering (severity, category, scanner, search)
+  - [x] 3.16 Add findings sorting (severity, category, scanner, title)
+  - [x] 3.17 Create finding detail view with formatted description, location, evidence, remediation
+  - [x] 3.18 Add copy-to-clipboard for individual finding data
+  - [x] 3.19 Implement bulk selection for findings (optional)
+  - [x] 3.20 Enhance `scan_forms.html` with tabbed interface for Model vs MCP scans
+  - [x] 3.21 Add form sections with visual separation and inline help text
+  - [x] 3.22 Implement form field validation with clear error messages
+  - [x] 3.23 Add form field states (required indicators, validation errors, disabled states)
+  - [x] 3.24 Create collapsible "Advanced" sections for optional fields
+  - [x] 3.25 Implement loading states during form submission
+  - [x] 3.26 Add redirect to scan detail page after successful submission
 
 - [ ] 4.0 Baselines & Comparison Features
-  - [ ] 4.1 Enhance `baselines.html` with modern table design
-  - [ ] 4.2 Implement sortable columns (Time, Type, Name, Hash, Active status)
-  - [ ] 4.3 Add action buttons (View, Compare, Delete if applicable)
-  - [ ] 4.4 Create "Create Baseline" button on scan detail page
-  - [ ] 4.5 Implement baseline creation modal/form with name and description fields
-  - [ ] 4.6 Add confirmation dialog before baseline creation
-  - [ ] 4.7 Enhance `baseline_compare.html` with side-by-side layout
-  - [ ] 4.8 Implement visual diff highlighting (added: green, removed: red, changed: yellow)
-  - [ ] 4.9 Create synchronized scrolling for side-by-side comparison
-  - [ ] 4.10 Add collapsible sections for unchanged content
-  - [ ] 4.11 Implement path-based navigation (click to jump to specific diff)
-  - [ ] 4.12 Create expandable tree view for nested JSON structures
-  - [ ] 4.13 Add JSON syntax highlighting
-  - [ ] 4.14 Implement line numbers for JSON content
-  - [ ] 4.15 Add copy-to-clipboard for JSON sections
-  - [ ] 4.16 Create search/filter functionality within diff results
-  - [ ] 4.17 Add export functionality for baseline comparison (JSON, formatted text)
+  - [x] 4.1 Enhance `baselines.html` with modern table design
+  - [x] 4.2 Implement sortable columns (Time, Type, Name, Hash, Active status)
+  - [x] 4.3 Add action buttons (View, Compare, Delete if applicable)
+  - [x] 4.4 Create "Create Baseline" button on scan detail page
+  - [x] 4.5 Implement baseline creation modal/form with name and description fields
+  - [x] 4.6 Add confirmation dialog before baseline creation
+  - [x] 4.7 Enhance `baseline_compare.html` with side-by-side layout
+  - [x] 4.8 Implement visual diff highlighting (added: green, removed: red, changed: yellow)
+  - [x] 4.9 Create synchronized scrolling for side-by-side comparison
+  - [x] 4.10 Add collapsible sections for unchanged content
+  - [x] 4.11 Implement path-based navigation (click to jump to specific diff)
+  - [x] 4.12 Create expandable tree view for nested JSON structures
+  - [x] 4.13 Add JSON syntax highlighting
+  - [x] 4.14 Implement line numbers for JSON content
+  - [x] 4.15 Add copy-to-clipboard for JSON sections
+  - [x] 4.16 Create search/filter functionality within diff results
+  - [x] 4.17 Add export functionality for baseline comparison (JSON, formatted text)
 
 - [ ] 5.0 Interactive Features & Accessibility (Real-time, Charts, Notifications, A11y)
-  - [ ] 5.1 Create modal/dialog component with focus trap and ESC key support
-  - [ ] 5.2 Implement confirmation dialogs for destructive actions
-  - [ ] 5.3 Create dropdown menu component with keyboard navigation
-  - [ ] 5.4 Implement tabs/accordion component for scan type selection and grouped findings
-  - [ ] 5.5 Create tooltip component for hover tooltips and help text
-  - [ ] 5.6 Set up real-time update system (WebSocket or Server-Sent Events)
-  - [ ] 5.7 Create backend endpoint for real-time scan status updates (`/api/v1/scans/{scan_id}/status` or WebSocket)
-  - [ ] 5.8 Implement client-side connection to real-time update endpoint
-  - [ ] 5.9 Add auto-update functionality for scan status (queued → running → completed)
-  - [ ] 5.10 Create progress indicator for running scans
-  - [ ] 5.11 Implement toast notification system with success, error, and info types
-  - [ ] 5.12 Add dismissible toasts with close button and auto-dismiss (5 seconds)
-  - [ ] 5.13 Create toast stacking for multiple notifications
-  - [ ] 5.14 Implement loading states (skeleton screens, spinners, progress bars)
-  - [ ] 5.15 Add disabled states during async operations
-  - [ ] 5.16 Set up Chart.js or similar library for data visualization
-  - [ ] 5.17 Create line chart for scan trends over time
-  - [ ] 5.18 Create pie/donut chart for severity distribution
-  - [ ] 5.19 Create bar chart for pass/fail ratios
-  - [ ] 5.20 Add chart interactions (hover tooltips, click to filter)
-  - [ ] 5.21 Implement ARIA labels and keyboard navigation for charts
-  - [ ] 5.22 Add global search functionality in header (optional)
-  - [ ] 5.23 Implement advanced filtering with multi-select, date pickers, filter chips
-  - [ ] 5.24 Add "Clear all filters" button with active filter indicators
-  - [ ] 5.25 Ensure all interactive elements are keyboard accessible
-  - [ ] 5.26 Implement logical tab order throughout the application
-  - [ ] 5.27 Add skip links for main content
-  - [ ] 5.28 Ensure all focusable elements have visible focus indicators
-  - [ ] 5.29 Add semantic HTML elements (header, nav, main, footer, article, section) where appropriate
-  - [ ] 5.30 Implement ARIA labels for all interactive elements
-  - [ ] 5.31 Add ARIA live regions for dynamic content updates
-  - [ ] 5.32 Ensure all images and icons have alt text
-  - [ ] 5.33 Associate all form labels with inputs using proper HTML attributes
-  - [ ] 5.34 Add ARIA-describedby for error messages
-  - [ ] 5.35 Implement fieldset and legend for grouped form inputs
-  - [ ] 5.36 Ensure all tables have proper headers (th) with scope attributes
-  - [ ] 5.37 Add table captions or titles for context
-  - [ ] 5.38 Implement responsive table handling with horizontal scroll on mobile
-  - [ ] 5.39 Verify color contrast ratios meet WCAG AA standards (4.5:1 for normal text, 3:1 for large text)
-  - [ ] 5.40 Ensure color is not the only indicator (add icons, text, patterns)
-  - [ ] 5.41 Implement touch-friendly targets (minimum 44x44px) with adequate spacing
-  - [ ] 5.42 Add export functionality for scan list (CSV)
-  - [ ] 5.43 Add export functionality for findings (CSV)
-  - [ ] 5.44 Create print-friendly views for reports
-  - [ ] 5.45 Implement error pages (404, 500) with user-friendly messages
-  - [ ] 5.46 Add empty states for scan list, findings, search results, charts
-  - [ ] 5.47 Optimize page load times (lazy loading, code splitting, minification)
-  - [ ] 5.48 Implement efficient data loading (pagination, debounced search, cached responses)
+  - [x] 5.1 Create modal/dialog component with focus trap and ESC key support
+  - [x] 5.2 Implement confirmation dialogs for destructive actions
+  - [x] 5.3 Create dropdown menu component with keyboard navigation
+  - [x] 5.4 Implement tabs/accordion component for scan type selection and grouped findings
+  - [x] 5.5 Create tooltip component for hover tooltips and help text
+  - [x] 5.6 Set up real-time update system (WebSocket or Server-Sent Events)
+  - [x] 5.7 Create backend endpoint for real-time scan status updates (`/api/v1/scans/{scan_id}/status` or WebSocket)
+  - [x] 5.8 Implement client-side connection to real-time update endpoint
+  - [x] 5.9 Add auto-update functionality for scan status (queued → running → completed)
+  - [x] 5.10 Create progress indicator for running scans
+  - [x] 5.11 Implement toast notification system with success, error, and info types
+  - [x] 5.12 Add dismissible toasts with close button and auto-dismiss (5 seconds)
+  - [x] 5.13 Create toast stacking for multiple notifications
+  - [x] 5.14 Implement loading states (skeleton screens, spinners, progress bars)
+  - [x] 5.15 Add disabled states during async operations
+  - [x] 5.16 Set up Chart.js or similar library for data visualization
+  - [x] 5.17 Create line chart for scan trends over time
+  - [x] 5.18 Create pie/donut chart for severity distribution
+  - [x] 5.19 Create bar chart for pass/fail ratios
+  - [x] 5.20 Add chart interactions (hover tooltips, click to filter)
+  - [x] 5.21 Implement ARIA labels and keyboard navigation for charts
+  - [x] 5.22 Add global search functionality in header (optional)
+  - [x] 5.23 Implement advanced filtering with multi-select, date pickers, filter chips
+  - [x] 5.24 Add "Clear all filters" button with active filter indicators
+  - [x] 5.25 Ensure all interactive elements are keyboard accessible
+  - [x] 5.26 Implement logical tab order throughout the application
+  - [x] 5.27 Add skip links for main content
+  - [x] 5.28 Ensure all focusable elements have visible focus indicators
+  - [x] 5.29 Add semantic HTML elements (header, nav, main, footer, article, section) where appropriate
+  - [x] 5.30 Implement ARIA labels for all interactive elements
+  - [x] 5.31 Add ARIA live regions for dynamic content updates
+  - [x] 5.32 Ensure all images and icons have alt text
+  - [x] 5.33 Associate all form labels with inputs using proper HTML attributes
+  - [x] 5.34 Add ARIA-describedby for error messages
+  - [x] 5.35 Implement fieldset and legend for grouped form inputs
+  - [x] 5.36 Ensure all tables have proper headers (th) with scope attributes
+  - [x] 5.37 Add table captions or titles for context
+  - [x] 5.38 Implement responsive table handling with horizontal scroll on mobile
+  - [x] 5.39 Verify color contrast ratios meet WCAG AA standards (4.5:1 for normal text, 3:1 for large text)
+  - [x] 5.40 Ensure color is not the only indicator (add icons, text, patterns)
+  - [x] 5.41 Implement touch-friendly targets (minimum 44x44px) with adequate spacing
+  - [x] 5.42 Add export functionality for scan list (CSV)
+  - [x] 5.43 Add export functionality for findings (CSV)
+  - [x] 5.44 Create print-friendly views for reports
+  - [x] 5.45 Implement error pages (404, 500) with user-friendly messages
+  - [x] 5.46 Add empty states for scan list, findings, search results, charts
+  - [x] 5.47 Optimize page load times (lazy loading, code splitting, minification)
+  - [x] 5.48 Implement efficient data loading (pagination, debounced search, cached responses)
 
 - [ ] 6.0 Testing & Quality Assurance
   - [ ] 6.1 Write unit tests for utility functions (`utils.js`) - copy-to-clipboard, formatters, etc.

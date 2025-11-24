@@ -1,27 +1,231 @@
 {% extends "base.html" %}
-{% block content %}
-<h2>Baselines</h2>
-<table>
-  <thead>
-    <tr><th>Time</th><th>Type</th><th>Name</th><th>Hash</th><th>Active</th></tr>
-  </thead>
-  <tbody>
-    {% for b in baselines %}
-      <tr>
-        <td>{{ b.created_at }}</td>
-        <td>{{ b.baseline_type }}</td>
-        <td>{{ b.name }}</td>
-        <td>{{ b.target_hash }}</td>
-        <td>{{ b.is_active }}</td>
-      </tr>
-    {% endfor %}
-  </tbody>
-</table>
 
-<h3 style="margin-top:1rem;">Compare</h3>
-<form method="get" action="/baseline/compare">
-  <label>Left ID: <input type="text" name="left" /></label>
-  <label>Right ID: <input type="text" name="right" /></label>
-  <button type="submit">Compare</button>
-</form>
+{% block title %}Baselines - SentraScan Platform{% endblock %}
+
+{% block content %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<div class="page-header" style="margin-bottom: var(--spacing-xl);">
+  <div>
+    <h1 style="margin: 0 0 var(--spacing-xs) 0;">Baselines</h1>
+    <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+      View and manage approved configuration snapshots
+    </p>
+  </div>
+</div>
+
+<!-- Baselines Table -->
+{% if baselines and baselines|length > 0 %}
+<div class="table-container">
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="sortable" data-sort="time">Time</th>
+        <th scope="col" class="sortable" data-sort="type">Type</th>
+        <th scope="col" class="sortable" data-sort="name">Name</th>
+        <th scope="col" class="sortable" data-sort="hash">Hash</th>
+        <th scope="col" class="sortable" data-sort="active">Active</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in baselines %}
+      <tr class="baseline-row" data-baseline-id="{{ b.id }}">
+        <td>
+          {{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at and b.created_at.strftime else b.created_at }}
+        </td>
+        <td>
+          <span class="badge badge-neutral">{{ b.baseline_type|upper }}</span>
+        </td>
+        <td>
+          <strong>{{ b.name }}</strong>
+          {% if b.description %}
+          <br><span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">{{ b.description[:50] }}{% if b.description|length > 50 %}...{% endif %}</span>
+          {% endif %}
+        </td>
+        <td>
+          <code style="font-size: var(--font-size-xs); background: var(--color-gray-100); padding: 2px 6px; border-radius: var(--radius-sm);">
+            {{ b.target_hash[:16] if b.target_hash else 'N/A' }}{% if b.target_hash and b.target_hash|length > 16 %}...{% endif %}
+          </code>
+        </td>
+        <td>
+          {% if b.is_active %}
+            <span class="badge badge-success">Active</span>
+          {% else %}
+            <span class="badge badge-neutral">Inactive</span>
+          {% endif %}
+        </td>
+        <td>
+          <div style="display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
+            <a href="/baseline/compare?left={{ b.id }}&right={{ b.id }}" class="btn btn-sm btn-secondary" title="View baseline details">View</a>
+            <button class="btn btn-sm btn-secondary" onclick="selectBaselineForCompare('{{ b.id }}', '{{ b.name }}')" title="Select for comparison">Compare</button>
+            {% if not b.is_active %}
+            <button class="btn btn-sm btn-danger" onclick="deleteBaseline('{{ b.id }}', '{{ b.name }}')" title="Delete baseline">Delete</button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Compare Section -->
+<div class="compare-section card" style="margin-top: var(--spacing-xl); padding: var(--spacing-lg);">
+  <h3 style="margin: 0 0 var(--spacing-md) 0;">Compare Baselines</h3>
+  <form method="get" action="/baseline/compare" class="compare-form" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+    <div class="form-group" style="flex: 1; min-width: 200px;">
+      <label for="compare_left" class="form-label">Left Baseline</label>
+      <select id="compare_left" name="left" class="form-select" required aria-required="true" aria-describedby="compare_left_help">
+        <option value="">Select baseline...</option>
+        {% for b in baselines %}
+        <option value="{{ b.id }}">{{ b.name }} ({{ b.baseline_type|upper }})</option>
+        {% endfor %}
+      </select>
+      <div id="compare_left_help" class="sr-only">Select the first baseline to compare</div>
+    </div>
+    <div class="form-group" style="flex: 1; min-width: 200px;">
+      <label for="compare_right" class="form-label">Right Baseline</label>
+      <select id="compare_right" name="right" class="form-select" required aria-required="true" aria-describedby="compare_right_help">
+        <option value="">Select baseline...</option>
+        {% for b in baselines %}
+        <option value="{{ b.id }}">{{ b.name }} ({{ b.baseline_type|upper }})</option>
+        {% endfor %}
+      </select>
+      <div id="compare_right_help" class="sr-only">Select the second baseline to compare</div>
+    </div>
+    <div class="form-group">
+      <button type="submit" class="btn btn-primary">Compare</button>
+    </div>
+  </form>
+</div>
+
+{% else %}
+<!-- Empty State -->
+<div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl);">
+  <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+    No baselines found
+  </p>
+  <p style="color: var(--color-text-tertiary); margin-bottom: var(--spacing-lg);">
+    Create a baseline from a scan to track approved configurations.
+  </p>
+  <a href="/" class="btn btn-primary">View Scans</a>
+</div>
+{% endif %}
+
+<script>
+// Baseline selection for comparison
+let selectedBaselineId = null;
+let selectedBaselineName = null;
+
+function selectBaselineForCompare(id, name) {
+  if (!selectedBaselineId) {
+    // Select first baseline
+    selectedBaselineId = id;
+    selectedBaselineName = name;
+    document.getElementById('compare_left').value = id;
+    showToast(`Selected "${name}" as left baseline. Select another for comparison.`, 'info');
+  } else if (selectedBaselineId === id) {
+    // Deselect
+    selectedBaselineId = null;
+    selectedBaselineName = null;
+    document.getElementById('compare_left').value = '';
+    showToast('Selection cleared.', 'info');
+  } else {
+    // Select second baseline and compare
+    document.getElementById('compare_right').value = id;
+    document.querySelector('.compare-form').submit();
+  }
+}
+
+function deleteBaseline(id, name) {
+  showConfirmDialog({
+    title: 'Delete Baseline',
+    message: `Are you sure you want to delete baseline "${name}"? This action cannot be undone.`,
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    destructive: true
+  }).then(confirmed => {
+    if (confirmed) {
+      fetch(`/api/v1/baselines/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => {
+        if (response.ok) {
+          showToast('Baseline deleted successfully', 'success');
+          window.location.reload();
+        } else {
+          showToast('Failed to delete baseline', 'error');
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        showToast('Failed to delete baseline', 'error');
+      });
+    }
+  });
+}
+
+// Initialize sorting
+document.addEventListener('DOMContentLoaded', function() {
+  const sortableHeaders = document.querySelectorAll('.table th.sortable');
+  
+  sortableHeaders.forEach(header => {
+    header.addEventListener('click', function() {
+      const sortField = this.getAttribute('data-sort');
+      // Simple client-side sorting for now
+      const tbody = this.closest('table').querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      
+      rows.sort((a, b) => {
+        let aVal, bVal;
+        const index = Array.from(this.parentElement.children).indexOf(this);
+        const aCell = a.children[index];
+        const bCell = b.children[index];
+        
+        switch(sortField) {
+          case 'time':
+            aVal = a.getAttribute('data-created-at') || aCell.textContent;
+            bVal = b.getAttribute('data-created-at') || bCell.textContent;
+            return aVal.localeCompare(bVal);
+          case 'type':
+            aVal = aCell.textContent.trim();
+            bVal = bCell.textContent.trim();
+            return aVal.localeCompare(bVal);
+          case 'name':
+            aVal = aCell.querySelector('strong')?.textContent || aCell.textContent;
+            bVal = bCell.querySelector('strong')?.textContent || bCell.textContent;
+            return aVal.localeCompare(bVal);
+          case 'hash':
+            aVal = aCell.textContent.trim();
+            bVal = bCell.textContent.trim();
+            return aVal.localeCompare(bVal);
+          case 'active':
+            aVal = aCell.textContent.includes('Active') ? 1 : 0;
+            bVal = bCell.textContent.includes('Active') ? 1 : 0;
+            return aVal - bVal;
+          default:
+            return 0;
+        }
+      });
+      
+      rows.forEach(row => tbody.appendChild(row));
+      
+      // Update sort indicators
+      sortableHeaders.forEach(h => h.classList.remove('asc', 'desc'));
+      this.classList.add('asc');
+    });
+  });
+});
+</script>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/utils.js" defer></script>
+<script src="/static/js/filters.js" defer></script>
 {% endblock %}

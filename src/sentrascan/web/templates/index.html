@@ -1,59 +1,315 @@
 {% extends "base.html" %}
+
+{% block title %}Scans - SentraScan Platform{% endblock %}
+
+{% block nav_dashboard_active %}nav-link-active{% endblock %}
+
 {% block content %}
-<h2>Recent Scans</h2>
-<form method="get" action="/">
-  <label>Type:
-    <select name="type">
-      <option value="">All</option>
-      <option value="model">Model</option>
-      <option value="mcp">MCP</option>
-    </select>
-  </label>
-  <label>Status:
-    <select name="passed">
-      <option value="">All</option>
-      <option value="true">Passed</option>
-      <option value="false">Failed</option>
-    </select>
-  </label>
-  <button type="submit">Filter</button>
-</form>
-<p><a href="/baselines">Baselines</a></p>
-<table>
-  <thead>
-    <tr>
-      <th>Time</th>
-      <th>Type</th>
-      <th>Target</th>
-      <th>Passed</th>
-      <th>Critical</th>
-      <th>High</th>
-      <th>Medium</th>
-      <th>Low</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for r in scans %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<section class="page-header" aria-labelledby="page-title" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
+    <div>
+      <h1 style="margin: 0 0 var(--spacing-xs) 0;">Scans</h1>
+      <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+        View and manage all security scans
+      </p>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      {% if scans and scans|length > 0 %}
+      <a href="/api/v1/scans/export?format=csv{% if filters.type %}&type={{ filters.type }}{% endif %}{% if filters.passed %}&passed={{ filters.passed }}{% endif %}{% if filters.time_range %}&time_range={{ filters.time_range }}{% endif %}{% if filters.date_from %}&date_from={{ filters.date_from }}{% endif %}{% if filters.date_to %}&date_to={{ filters.date_to }}{% endif %}{% if filters.search %}&search={{ filters.search }}{% endif %}" class="btn btn-secondary" download aria-label="Export scans as CSV">Export CSV</a>
+      {% endif %}
+      <a href="/ui/scan" class="btn btn-primary">Run New Scan</a>
+    </div>
+  </div>
+</section>
+
+<!-- Filters Section -->
+<section class="filters-section card" aria-label="Filter scans" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+  <form method="get" action="/" class="scan-filters-form" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_type" class="form-label">Scan Type</label>
+      <select id="filter_type" name="type" class="form-select">
+        <option value="">All Types</option>
+        <option value="model" {% if filters.type == 'model' %}selected{% endif %}>Model</option>
+        <option value="mcp" {% if filters.type == 'mcp' %}selected{% endif %}>MCP</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_status" class="form-label">Status</label>
+      <select id="filter_status" name="passed" class="form-select">
+        <option value="">All Status</option>
+        <option value="true" {% if filters.passed == 'true' %}selected{% endif %}>Passed</option>
+        <option value="false" {% if filters.passed == 'false' %}selected{% endif %}>Failed</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_time_range" class="form-label">Time Range</label>
+      <select id="filter_time_range" name="time_range" class="form-select">
+        <option value="">All Time</option>
+        <option value="7d" {% if filters.time_range == '7d' %}selected{% endif %}>Last 7 days</option>
+        <option value="30d" {% if filters.time_range == '30d' %}selected{% endif %}>Last 30 days</option>
+        <option value="90d" {% if filters.time_range == '90d' %}selected{% endif %}>Last 90 days</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="filter_date_from" class="form-label">Date From</label>
+      <input type="date" id="filter_date_from" name="date_from" class="form-input" value="{{ filters.date_from if filters.date_from else '' }}">
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="filter_date_to" class="form-label">Date To</label>
+      <input type="date" id="filter_date_to" name="date_to" class="form-input" value="{{ filters.date_to if filters.date_to else '' }}">
+    </div>
+    <div class="form-group" style="margin-bottom: 0; display: flex; gap: var(--spacing-sm);">
+      <button type="submit" class="btn btn-secondary">Apply Filters</button>
+      <button type="button" id="clear-all-filters-btn" class="btn btn-secondary" onclick="clearAllFilters()" style="display: {% if filters.type or filters.passed or filters.time_range or filters.date_from or filters.date_to %}inline-block{% else %}none{% endif %};">Clear All</button>
+    </div>
+  </form>
+  
+  <!-- Active Filters Display (Filter Chips) -->
+  <div id="filter-chips-container" class="active-filters" style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-border-light); display: flex; flex-wrap: wrap; gap: var(--spacing-xs); align-items: center; min-height: 32px;">
+    {% if filters.type %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="type" data-filter-value="{{ filters.type }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Type: {{ filters.type|upper }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('type')" aria-label="Remove type filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.passed %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="passed" data-filter-value="{{ filters.passed }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Status: {{ 'Passed' if filters.passed == 'true' else 'Failed' }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('passed')" aria-label="Remove status filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.time_range %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="time_range" data-filter-value="{{ filters.time_range }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Time: {{ 'Last 7 days' if filters.time_range == '7d' else ('Last 30 days' if filters.time_range == '30d' else 'Last 90 days') }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('time_range')" aria-label="Remove time range filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.date_from %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="date_from" data-filter-value="{{ filters.date_from }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      From: {{ filters.date_from }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('date_from')" aria-label="Remove date from filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.date_to %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="date_to" data-filter-value="{{ filters.date_to }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      To: {{ filters.date_to }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('date_to')" aria-label="Remove date to filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.search %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="search" data-filter-value="{{ filters.search }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Search: {{ filters.search }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('search')" aria-label="Remove search filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Scans Table -->
+{% if scans and scans|length > 0 %}
+<div class="table-container">
+  <table class="table" role="table" aria-label="List of security scans">
+    <caption>All Security Scans</caption>
+    <thead>
       <tr>
-<td><a href="/scan/{{ r.id }}">{{ r.created_at }}</a></td>
-        <td>{{ r.scan_type }}</td>
-        <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis;">{{ r.target_path }}</td>
-        <td>{% if r.passed %}<span class="badge ok">PASS</span>{% else %}<span class="badge fail">FAIL</span>{% endif %}</td>
-        <td>{{ r.critical_count }}</td>
-        <td>{{ r.high_count }}</td>
-        <td>{{ r.medium_count }}</td>
-        <td>{{ r.low_count }}</td>
+        <th scope="col" class="sortable" data-sort="time">Time</th>
+        <th scope="col" class="sortable" data-sort="type">Type</th>
+        <th scope="col" class="sortable" data-sort="target">Target</th>
+        <th scope="col" class="sortable" data-sort="status">Status</th>
+        <th scope="col" class="sortable" data-sort="critical">Critical</th>
+        <th scope="col" class="sortable" data-sort="high">High</th>
+        <th scope="col" class="sortable" data-sort="medium">Medium</th>
+        <th scope="col" class="sortable" data-sort="low">Low</th>
       </tr>
-    {% endfor %}
-  </tbody>
-</table>
-<div style="margin-top:1rem;">
-  {% if page and page>1 %}
-    <a href="/?type={{ filters.type }}&passed={{ filters.passed }}&page={{ page-1 }}">Prev</a>
-  {% endif %}
-  {% if has_next %}
-    <a style="margin-left:1rem;" href="/?type={{ filters.type }}&passed={{ filters.passed }}&page={{ page+1 }}">Next</a>
-  {% endif %}
+    </thead>
+    <tbody>
+      {% for scan in scans %}
+      <tr class="scan-row" data-scan-id="{{ scan.id }}" onclick="window.location.href='/scan/{{ scan.id }}'" style="cursor: pointer;">
+        <td>
+          <a href="/scan/{{ scan.id }}" style="text-decoration: none; color: inherit;">
+            {{ scan.created_at.strftime('%Y-%m-%d %H:%M') if scan.created_at and scan.created_at.strftime else scan.created_at }}
+          </a>
+        </td>
+        <td>
+          <span class="badge badge-neutral">{{ scan.scan_type|upper }}</span>
+        </td>
+        <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <a href="/scan/{{ scan.id }}" 
+             class="target-path-link" 
+             style="text-decoration: none; color: inherit;"
+             data-tooltip="{{ scan.target_path }}"
+             data-tooltip-position="bottom">
+            {{ scan.target_path }}
+          </a>
+        </td>
+        <td>
+          {% if scan.scan_status == 'queued' %}
+            <span class="badge badge-warning scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="queued" title="Scan is queued">
+              <span class="icon-status-queued" aria-hidden="true">⏱</span> Queued
+            </span>
+          {% elif scan.scan_status == 'running' %}
+            <span class="badge badge-info scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="running" title="Scan is running">
+              <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> Running
+            </span>
+          {% elif scan.scan_status == 'failed' %}
+            <span class="badge badge-error scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="failed" title="Scan failed">
+              <span class="icon-status-error" aria-hidden="true">✕</span> Failed
+            </span>
+          {% elif scan.passed %}
+            <span class="badge badge-success scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="completed" title="Scan passed">
+              <span class="icon-status-success" aria-hidden="true">✓</span> PASS
+            </span>
+          {% else %}
+            <span class="badge badge-error scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="completed" title="Scan failed security checks">
+              <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+            </span>
+          {% endif %}
+        </td>
+        <td>
+          {% if scan.critical_count > 0 %}
+            <span class="badge badge-critical">{{ scan.critical_count }}</span>
+          {% else %}
+            <span style="color: var(--color-text-tertiary);">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if scan.high_count > 0 %}
+            <span class="badge badge-high">{{ scan.high_count }}</span>
+          {% else %}
+            <span style="color: var(--color-text-tertiary);">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if scan.medium_count > 0 %}
+            <span class="badge badge-medium">{{ scan.medium_count }}</span>
+          {% else %}
+            <span style="color: var(--color-text-tertiary);">0</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if scan.low_count > 0 %}
+            <span class="badge badge-low">{{ scan.low_count }}</span>
+          {% else %}
+            <span style="color: var(--color-text-tertiary);">0</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Pagination -->
+<div class="pagination" style="margin-top: var(--spacing-lg); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
+  <div style="display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap;">
+    <div style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+      Page {{ page }}
+      {% if total is defined %}
+        <span style="color: var(--color-text-tertiary);">of {{ (total / page_size)|round(0, 'ceil')|int if total else 1 }}</span>
+        <span style="color: var(--color-text-tertiary); margin-left: var(--spacing-xs);">({{ total }} total)</span>
+      {% elif scans and scans|length > 0 %}
+        <span style="color: var(--color-text-tertiary);">({{ scans|length }} items)</span>
+      {% endif %}
+    </div>
+    <div class="form-group" style="margin-bottom: 0; display: flex; align-items: center; gap: var(--spacing-xs);">
+      <label for="page_size" class="form-label" style="margin: 0; font-size: var(--font-size-sm);">Items per page:</label>
+      <select id="page_size" name="page_size" class="form-select" style="width: auto; min-width: 80px;" onchange="updatePageSize(this.value)">
+        <option value="10" {% if page_size == 10 %}selected{% endif %}>10</option>
+        <option value="20" {% if page_size == 20 %}selected{% endif %}>20</option>
+        <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+      </select>
+    </div>
+  </div>
+  <div style="display: flex; gap: var(--spacing-sm); align-items: center;">
+    {% if page and page > 1 %}
+    <a href="/?type={{ filters.type }}&passed={{ filters.passed }}&sort={{ sort }}&order={{ order }}&page={{ page-1 }}&page_size={{ page_size }}" class="btn btn-secondary btn-sm">Previous</a>
+    {% else %}
+    <span class="btn btn-secondary btn-sm" style="opacity: 0.5; cursor: not-allowed;" aria-disabled="true">Previous</span>
+    {% endif %}
+    
+    <!-- Page Numbers -->
+    {% if total is defined and total > 0 %}
+      {% set total_pages = (total / page_size)|round(0, 'ceil')|int %}
+      {% set start_page = [1, page - 2]|max %}
+      {% set end_page = [start_page + 4, total_pages]|min %}
+      {% for p in range(start_page, end_page + 1) %}
+      {% if p == page %}
+        <span class="btn btn-primary btn-sm" style="min-width: 40px;" aria-current="page">{{ p }}</span>
+      {% else %}
+        <a href="/?type={{ filters.type }}&passed={{ filters.passed }}&sort={{ sort }}&order={{ order }}&page={{ p }}&page_size={{ page_size }}" class="btn btn-secondary btn-sm" style="min-width: 40px;">{{ p }}</a>
+      {% endif %}
+      {% endfor %}
+    {% endif %}
+    
+    {% if has_next %}
+    <a href="/?type={{ filters.type }}&passed={{ filters.passed }}&sort={{ sort }}&order={{ order }}&page={{ page+1 }}&page_size={{ page_size }}" class="btn btn-secondary btn-sm">Next</a>
+    {% else %}
+    <span class="btn btn-secondary btn-sm" style="opacity: 0.5; cursor: not-allowed;" aria-disabled="true">Next</span>
+    {% endif %}
+  </div>
 </div>
-<p style="margin-top:1rem;">Use the CLI, API, or UI to trigger scans.</p>
+
+<script>
+function updatePageSize(size) {
+  const url = new URL(window.location);
+  url.searchParams.set('page_size', size);
+  url.searchParams.set('page', '1'); // Reset to page 1
+  window.location.href = url.toString();
+}
+</script>
+
+{% else %}
+<!-- Empty State -->
+<div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl);">
+  <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+    No scans found
+  </p>
+  <p style="color: var(--color-text-tertiary); margin-bottom: var(--spacing-lg);">
+    {% if filters.type or filters.passed %}
+      Try adjusting your filters or run a new scan.
+    {% else %}
+      Get started by running your first scan.
+    {% endif %}
+  </p>
+  <a href="/ui/scan" class="btn btn-primary">Run Your First Scan</a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/utils.js" defer></script>
+<script src="/static/js/filters.js" defer></script>
+<script src="/static/js/filtering.js" defer></script>
+<script src="/static/js/realtime.js" defer></script>
+<script>
+// Auto-update status badges for running/queued scans in the list
+document.addEventListener('DOMContentLoaded', function() {
+  const runningScans = document.querySelectorAll('.scan-status-badge[data-scan-status="running"], .scan-status-badge[data-scan-status="queued"]');
+  
+  runningScans.forEach(badge => {
+    const scanId = badge.getAttribute('data-scan-id');
+    const row = badge.closest('tr');
+    
+    // Update badge in the row
+    autoUpdateScanStatus(scanId, {
+      badgeElement: badge,
+      onStatusChange: function(data) {
+        // Update the row's status badge
+        if (data.status === 'completed' || data.status === 'failed') {
+          // Reload the page to show updated data
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        }
+      }
+    });
+  });
+});
+</script>
 {% endblock %}

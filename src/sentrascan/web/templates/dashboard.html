@@ -8,10 +8,10 @@
 {% include 'components/_breadcrumb.html' with context %}
 
 <!-- Dashboard Header -->
-<div class="dashboard-header" style="margin-bottom: var(--spacing-xl);">
+<header class="dashboard-header" aria-labelledby="dashboard-title" style="margin-bottom: var(--spacing-xl);">
   <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
     <div>
-      <h1 style="margin: 0 0 var(--spacing-xs) 0;">Dashboard</h1>
+      <h1 id="dashboard-title" style="margin: 0 0 var(--spacing-xs) 0;">Dashboard</h1>
       <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
         Overview of your security scans and findings
       </p>
@@ -42,10 +42,10 @@
       </div>
     </div>
   </div>
-</div>
+</header>
 
 <!-- Dashboard Filters -->
-<div class="dashboard-filters card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+<section class="dashboard-filters card" aria-label="Dashboard filters" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
   <form method="get" action="/" class="dashboard-filter-form" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
     <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
       <label for="filter_type" class="form-label">Scan Type</label>
@@ -72,42 +72,63 @@
         <option value="90d" {% if filters.time_range == '90d' %}selected{% endif %}>Last 90 days</option>
       </select>
     </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="filter_date_from" class="form-label">Date From</label>
+      <input type="date" id="filter_date_from" name="date_from" class="form-input" value="{{ filters.date_from if filters.date_from else '' }}">
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="filter_date_to" class="form-label">Date To</label>
+      <input type="date" id="filter_date_to" name="date_to" class="form-input" value="{{ filters.date_to if filters.date_to else '' }}">
+    </div>
     <div class="form-group" style="margin-bottom: 0; display: flex; gap: var(--spacing-sm);">
       <button type="submit" class="btn btn-secondary">Apply Filters</button>
-      {% if filters.type or filters.passed or filters.time_range %}
-      <a href="/" class="btn btn-secondary">Clear</a>
-      {% endif %}
+      <button type="button" id="clear-all-filters-btn" class="btn btn-secondary" onclick="clearAllFilters()" style="display: {% if filters.type or filters.passed or filters.time_range or filters.date_from or filters.date_to %}inline-block{% else %}none{% endif %};">Clear All</button>
     </div>
   </form>
   
-  <!-- Active Filters Display -->
-  {% if filters.type or filters.passed or filters.time_range %}
-  <div class="active-filters" style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-border-light); display: flex; flex-wrap: wrap; gap: var(--spacing-xs); align-items: center;">
-    <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Active filters:</span>
+  <!-- Active Filters Display (Filter Chips) -->
+  <div id="filter-chips-container" class="active-filters" style="margin-top: var(--spacing-md); padding-top: var(--spacing-md); border-top: 1px solid var(--color-border-light); display: flex; flex-wrap: wrap; gap: var(--spacing-xs); align-items: center; min-height: 32px;">
     {% if filters.type %}
-    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+    <span class="filter-chip badge badge-neutral" data-filter-key="type" data-filter-value="{{ filters.type }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
       Type: {{ filters.type|upper }}
-      <a href="?{% if filters.passed %}passed={{ filters.passed }}&{% endif %}{% if filters.time_range %}time_range={{ filters.time_range }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove type filter">×</a>
+      <button class="filter-chip-remove" onclick="removeFilterChip('type')" aria-label="Remove type filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
     </span>
     {% endif %}
     {% if filters.passed %}
-    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+    <span class="filter-chip badge badge-neutral" data-filter-key="passed" data-filter-value="{{ filters.passed }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
       Status: {{ 'Passed' if filters.passed == 'true' else 'Failed' }}
-      <a href="?{% if filters.type %}type={{ filters.type }}&{% endif %}{% if filters.time_range %}time_range={{ filters.time_range }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove status filter">×</a>
+      <button class="filter-chip-remove" onclick="removeFilterChip('passed')" aria-label="Remove status filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
     </span>
     {% endif %}
     {% if filters.time_range %}
-    <span class="badge badge-neutral" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+    <span class="filter-chip badge badge-neutral" data-filter-key="time_range" data-filter-value="{{ filters.time_range }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
       Time: {{ 'Last 7 days' if filters.time_range == '7d' else ('Last 30 days' if filters.time_range == '30d' else 'Last 90 days') }}
-      <a href="?{% if filters.type %}type={{ filters.type }}&{% endif %}{% if filters.passed %}passed={{ filters.passed }}{% endif %}" style="color: inherit; text-decoration: none; margin-left: var(--spacing-xs);" aria-label="Remove time range filter">×</a>
+      <button class="filter-chip-remove" onclick="removeFilterChip('time_range')" aria-label="Remove time range filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.date_from %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="date_from" data-filter-value="{{ filters.date_from }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      From: {{ filters.date_from }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('date_from')" aria-label="Remove date from filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.date_to %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="date_to" data-filter-value="{{ filters.date_to }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      To: {{ filters.date_to }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('date_to')" aria-label="Remove date to filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
+    </span>
+    {% endif %}
+    {% if filters.search %}
+    <span class="filter-chip badge badge-neutral" data-filter-key="search" data-filter-value="{{ filters.search }}" style="display: inline-flex; align-items: center; gap: var(--spacing-xs);">
+      Search: {{ filters.search }}
+      <button class="filter-chip-remove" onclick="removeFilterChip('search')" aria-label="Remove search filter" style="background: none; border: none; color: inherit; cursor: pointer; padding: 0; margin-left: var(--spacing-xs);">×</button>
     </span>
     {% endif %}
   </div>
-  {% endif %}
-</div>
+</section>
 
 <!-- Statistics Cards -->
-<div class="stats-grid grid grid-4" style="margin-bottom: var(--spacing-xl);">
+<section class="stats-grid grid grid-4" aria-label="Dashboard statistics" style="margin-bottom: var(--spacing-xl);">
   <!-- Total Scans Card -->
   <div class="stat-card card">
     <div class="stat-card-header" style="display: flex; justify-content: space-between; align-items: start; margin-bottom: var(--spacing-md);">
@@ -119,7 +140,7 @@
           {{ stats.total_scans if stats else (scans|length if scans else 0) }}
         </p>
       </div>
-      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-primary); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-primary); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;" aria-hidden="true">
         <span style="font-size: 24px;" aria-hidden="true">📊</span>
       </div>
     </div>
@@ -145,7 +166,7 @@
           {% endif %}
         </p>
       </div>
-      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-success); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-success); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;" aria-hidden="true">
         <span style="font-size: 24px;" aria-hidden="true">✓</span>
       </div>
     </div>
@@ -175,7 +196,7 @@
           {% endif %}
         </p>
       </div>
-      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-warning); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;">
+      <div class="stat-card-icon" style="width: 48px; height: 48px; background-color: var(--color-warning); opacity: 0.1; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;" aria-hidden="true">
         <span style="font-size: 24px;" aria-hidden="true">⚠</span>
       </div>
     </div>
@@ -258,25 +279,68 @@
       </div>
     </div>
   </div>
+</section>
+
+<!-- Charts Section -->
+<section class="charts-section" aria-labelledby="charts-title" style="margin-bottom: var(--spacing-xl);">
+  <h2 id="charts-title" style="margin-bottom: var(--spacing-lg);">Analytics</h2>
+  
+  <div class="charts-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--spacing-lg); margin-bottom: var(--spacing-xl);">
+    <!-- Scan Trends Chart -->
+    <div class="chart-card card" style="padding: var(--spacing-lg);">
+      <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-base);">Scan Trends</h3>
+      <div style="position: relative; height: 300px;">
+        <canvas id="scan-trends-chart" role="img" aria-label="Line chart showing scan trends over time"></canvas>
+      </div>
+    </div>
+    
+    <!-- Severity Distribution Chart -->
+    <div class="chart-card card" style="padding: var(--spacing-lg);">
+      <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-base);">Severity Distribution</h3>
+      <div style="position: relative; height: 300px;">
+        <canvas id="severity-chart" role="img" aria-label="Donut chart showing severity distribution"></canvas>
+      </div>
+    </div>
+    
+    <!-- Pass/Fail Ratio Chart -->
+    <div class="chart-card card" style="padding: var(--spacing-lg);">
+      <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-base);">Pass/Fail Ratio</h3>
+      <div style="position: relative; height: 300px;">
+        <canvas id="pass-fail-chart" role="img" aria-label="Bar chart showing pass/fail ratios"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+{% else %}
+<div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl); margin-bottom: var(--spacing-xl);">
+  <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+    No data available for charts
+  </p>
+  <p style="color: var(--color-text-tertiary); margin-bottom: var(--spacing-lg);">
+    Run some scans to see analytics
+  </p>
+  <a href="/ui/scan" class="btn btn-primary">Run Your First Scan</a>
 </div>
+{% endif %}
 
 <!-- Recent Activity Section -->
-<div class="recent-activity-section" style="margin-bottom: var(--spacing-xl);">
+<section class="recent-activity-section" aria-labelledby="recent-scans-title" style="margin-bottom: var(--spacing-xl);">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
-    <h2 style="margin: 0;">Recent Scans</h2>
+    <h2 id="recent-scans-title" style="margin: 0;">Recent Scans</h2>
     <a href="/" class="btn btn-secondary btn-sm">View All</a>
   </div>
 
   {% if scans and scans|length > 0 %}
   <div class="table-container">
-    <table class="table">
+    <table class="table" role="table" aria-label="Recent scans">
+      <caption class="sr-only">Table showing recent security scans</caption>
       <thead>
         <tr>
-          <th>Time</th>
-          <th>Type</th>
-          <th>Target</th>
-          <th>Status</th>
-          <th>Findings</th>
+          <th scope="col">Time</th>
+          <th scope="col">Type</th>
+          <th scope="col">Target</th>
+          <th scope="col">Status</th>
+          <th scope="col">Findings</th>
         </tr>
       </thead>
       <tbody>
@@ -337,12 +401,108 @@
     <a href="/ui/scan" class="btn btn-primary">Run Your First Scan</a>
   </div>
   {% endif %}
-</div>
+</section>
 
 <!-- Dashboard Scripts -->
+<script src="/static/js/charts.js"></script>
 <script>
 (function() {
   'use strict';
+  
+  // ============================================
+  // Initialize Charts
+  // ============================================
+  
+  let charts = {};
+  
+  async function loadCharts() {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      // Remove page params for chart data
+      params.delete('page');
+      params.delete('page_size');
+      const response = await fetch(`/api/v1/dashboard/charts?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to load chart data');
+      }
+      
+      const data = await response.json();
+      
+      // Create scan trends chart
+      if (data.trends && data.trends.labels.length > 0) {
+        charts.trends = createScanTrendsChart('scan-trends-chart', data.trends, {
+          onClick: (element) => {
+            const date = data.trends.labels[element.index];
+            // Filter by date (could be enhanced)
+            if (typeof showToast !== 'undefined') {
+              showToast(`Clicked on ${date}`, 'info');
+            }
+          }
+        });
+      } else {
+        // Show empty state
+        const canvas = document.getElementById('scan-trends-chart');
+        if (canvas) {
+          canvas.parentElement.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--spacing-lg);">No trend data available</p>';
+        }
+      }
+      
+      // Create severity chart
+      if (data.severity) {
+        const total = (data.severity.critical || 0) + (data.severity.high || 0) + (data.severity.medium || 0) + (data.severity.low || 0);
+        if (total > 0) {
+          charts.severity = createSeverityChart('severity-chart', data.severity, {
+            type: 'doughnut',
+            onClick: (data) => {
+              // Filter by severity
+              const severity = data.label.toLowerCase();
+              window.location.href = `/?severity=${severity}`;
+            }
+          });
+        } else {
+          const canvas = document.getElementById('severity-chart');
+          if (canvas) {
+            canvas.parentElement.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--spacing-lg);">No severity data available</p>';
+          }
+        }
+      }
+      
+      // Create pass/fail chart
+      if (data.passFail) {
+        const total = (data.passFail.passed || 0) + (data.passFail.failed || 0);
+        if (total > 0) {
+          charts.passFail = createPassFailChart('pass-fail-chart', data.passFail, {
+            onClick: (data) => {
+              // Filter by pass/fail
+              const passed = data.label.toLowerCase() === 'passed';
+              window.location.href = `/?passed=${passed}`;
+            }
+          });
+        } else {
+          const canvas = document.getElementById('pass-fail-chart');
+          if (canvas) {
+            canvas.parentElement.innerHTML = '<p style="text-align: center; color: var(--color-text-secondary); padding: var(--spacing-lg);">No pass/fail data available</p>';
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading charts:', error);
+    }
+  }
+  
+  // Load charts when Chart.js is ready
+  if (typeof Chart !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', loadCharts);
+    } else {
+      loadCharts();
+    }
+  } else {
+    // Wait for Chart.js to load
+    window.addEventListener('load', () => {
+      setTimeout(loadCharts, 100);
+    });
+  }
   
   // ============================================
   // Auto-refresh functionality

@@ -1,41 +1,915 @@
 {% extends "base.html" %}
+
+{% block title %}Scan {{ scan.id }} - SentraScan Platform{% endblock %}
+
 {% block content %}
-<h2>Scan {{ scan.id }}</h2>
-<p><strong>Time:</strong> {{ scan.created_at }} | <strong>Type:</strong> {{ scan.scan_type }} | <strong>Target:</strong> {{ scan.target_path }}
-| <strong>Result:</strong> {% if scan.passed %}<span class="badge ok">PASS</span>{% else %}<span class="badge fail">FAIL</span>{% endif %}</p>
+{% include 'components/_breadcrumb.html' with context %}
 
-<p>
-  <a href="/api/v1/scans/{{ scan.id }}/report">Download JSON Report</a>
-  {% if scan.sbom_id %} | <a href="/api/v1/scans/{{ scan.id }}/sbom">Download SBOM</a>{% endif %}
-</p>
+<!-- Scan Header -->
+<div class="scan-header card" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: var(--spacing-md); margin-bottom: var(--spacing-lg);">
+    <div style="flex: 1;">
+      <div style="display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap; margin-bottom: var(--spacing-sm);">
+        <h1 style="margin: 0; font-size: var(--font-size-2xl);">Scan Details</h1>
+        {% if scan.scan_status == 'queued' %}
+          <span id="scan-status-badge" class="badge badge-warning">
+            <span class="icon-status-queued" aria-hidden="true">⏱</span> Queued
+          </span>
+        {% elif scan.scan_status == 'running' %}
+          <span id="scan-status-badge" class="badge badge-info">
+            <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> Running
+          </span>
+        {% elif scan.scan_status == 'failed' %}
+          <span id="scan-status-badge" class="badge badge-error">
+            <span class="icon-status-error" aria-hidden="true">✕</span> Failed
+          </span>
+        {% elif scan.passed %}
+          <span id="scan-status-badge" class="badge badge-success" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md);">
+            <span class="icon-status-success" aria-hidden="true">✓</span> PASS
+          </span>
+        {% else %}
+          <span id="scan-status-badge" class="badge badge-error" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md);">
+            <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+          </span>
+        {% endif %}
+      </div>
+      
+      <!-- Progress Indicator for Running Scans -->
+      {% if scan.scan_status == 'running' or scan.scan_status == 'queued' %}
+      <div id="scan-progress" class="progress-bar" style="margin-top: var(--spacing-md); width: 100%; max-width: 400px;">
+        <div class="progress-bar-fill progress-bar-indeterminate" style="width: 100%;"></div>
+      </div>
+      {% endif %}
+      
+      <div class="scan-meta" style="display: flex; flex-wrap: wrap; gap: var(--spacing-lg); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+        <div>
+          <strong>Scan ID:</strong>
+          <code id="scan-id" style="margin-left: var(--spacing-xs); background: var(--color-gray-100); padding: 2px 6px; border-radius: var(--radius-sm);">{{ scan.id }}</code>
+          <button class="btn btn-sm" onclick="copyToClipboard('{{ scan.id }}')" aria-label="Copy scan ID" style="padding: 2px 6px; margin-left: var(--spacing-xs); min-height: auto;">
+            <span aria-hidden="true">📋</span>
+          </button>
+        </div>
+        <div>
+          <strong>Type:</strong> <span class="badge badge-neutral">{{ scan.scan_type|upper }}</span>
+        </div>
+        <div>
+          <strong>Time:</strong> {{ scan.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') if scan.created_at and scan.created_at.strftime else scan.created_at }}
+        </div>
+        {% if scan.duration_ms %}
+        <div>
+          <strong>Duration:</strong> {{ (scan.duration_ms / 1000)|round(2) }}s
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <a href="/api/v1/scans/{{ scan.id }}/report" class="btn btn-secondary" download aria-label="Download JSON report for scan {{ scan.id }}">Download JSON Report</a>
+      {% if scan.sbom_id %}
+      <a href="/api/v1/scans/{{ scan.id }}/sbom" class="btn btn-secondary" download aria-label="Download SBOM for scan {{ scan.id }}">Download SBOM</a>
+      {% endif %}
+      {% if findings and findings|length > 0 %}
+      <a href="/api/v1/scans/{{ scan.id }}/findings/export?format=csv" class="btn btn-secondary" download aria-label="Export findings as CSV">Export Findings (CSV)</a>
+      {% endif %}
+      {% if existing_baseline %}
+      <a href="/baseline/compare?left={{ existing_baseline.id }}&right={{ scan.id }}" class="btn btn-secondary">Compare with Baseline</a>
+      {% else %}
+      <button class="btn btn-primary" onclick="openCreateBaselineModal()">Create Baseline</button>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Target Path -->
+  <div style="padding-top: var(--spacing-md); border-top: 1px solid var(--color-border-light);">
+    <div style="display: flex; align-items: center; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <strong style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Target Path:</strong>
+      <code id="target-path" style="flex: 1; background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ scan.target_path }}</code>
+      <button class="btn btn-sm" onclick="copyToClipboard('{{ scan.target_path }}')" aria-label="Copy target path" style="padding: 4px 8px; min-height: auto;">
+        <span aria-hidden="true">📋</span> Copy
+      </button>
+    </div>
+  </div>
+</div>
 
-<h3>Summary</h3>
-<ul>
-  <li><span class="badge crit">Critical: {{ scan.critical_count }}</span></li>
-  <li><span class="badge fail">High: {{ scan.high_count }}</span></li>
-  <li><span class="badge warn">Medium: {{ scan.medium_count }}</span></li>
-  <li><span class="badge ok">Low: {{ scan.low_count }}</span></li>
-</ul>
+<!-- Severity Summary -->
+<div class="severity-summary" style="margin-bottom: var(--spacing-xl);">
+  <h2 style="margin-bottom: var(--spacing-lg);">Summary</h2>
+  <div class="severity-cards grid grid-4" style="gap: var(--spacing-md);">
+    <div class="card" style="text-align: center; padding: var(--spacing-lg);">
+      <div class="severity-value" style="font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-severity-critical); margin-bottom: var(--spacing-xs);">
+        {{ scan.critical_count or 0 }}
+      </div>
+      <div class="severity-label">
+        <span class="badge badge-critical">Critical</span>
+      </div>
+    </div>
+    <div class="card" style="text-align: center; padding: var(--spacing-lg);">
+      <div class="severity-value" style="font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-severity-high); margin-bottom: var(--spacing-xs);">
+        {{ scan.high_count or 0 }}
+      </div>
+      <div class="severity-label">
+        <span class="badge badge-high">High</span>
+      </div>
+    </div>
+    <div class="card" style="text-align: center; padding: var(--spacing-lg);">
+      <div class="severity-value" style="font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-severity-medium); margin-bottom: var(--spacing-xs);">
+        {{ scan.medium_count or 0 }}
+      </div>
+      <div class="severity-label">
+        <span class="badge badge-medium">Medium</span>
+      </div>
+    </div>
+    <div class="card" style="text-align: center; padding: var(--spacing-lg);">
+      <div class="severity-value" style="font-size: var(--font-size-3xl); font-weight: var(--font-weight-bold); color: var(--color-severity-low); margin-bottom: var(--spacing-xs);">
+        {{ scan.low_count or 0 }}
+      </div>
+      <div class="severity-label">
+        <span class="badge badge-low">Low</span>
+      </div>
+    </div>
+  </div>
+</div>
 
-<h3>Findings ({{ findings|length }})</h3>
-<table>
+<!-- Findings Section -->
+<div class="findings-section">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
+    <h2 style="margin: 0;">Findings ({{ findings|length }})</h2>
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap; align-items: center;">
+      <div class="bulk-actions" id="bulk-actions" style="display: none; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); background: var(--color-primary); color: var(--color-text-inverse); border-radius: var(--radius-md);">
+        <span id="selected-count" style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">0 selected</span>
+        <button class="btn btn-sm" onclick="exportSelectedFindings()" style="background: var(--color-text-inverse); color: var(--color-primary); border: none;">Export Selected</button>
+        <button class="btn btn-sm" onclick="clearSelection()" style="background: transparent; color: var(--color-text-inverse); border: 1px solid var(--color-text-inverse);">Clear</button>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="expandAllFindings()">Expand All</button>
+      <button class="btn btn-secondary btn-sm" onclick="collapseAllFindings()">Collapse All</button>
+    </div>
+  </div>
+
+  {% if findings and findings|length > 0 %}
+  <!-- Findings Filters -->
+  <div class="findings-filters card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+    <div style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+      <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+        <label for="filter_severity" class="form-label">Severity</label>
+        <select id="filter_severity" class="form-select" onchange="filterFindings()">
+          <option value="">All Severities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+        <label for="filter_category" class="form-label">Category</label>
+        <select id="filter_category" class="form-select" onchange="filterFindings()">
+          <option value="">All Categories</option>
+          {% set categories = findings|map(attribute='category')|list|unique|sort %}
+          {% for cat in categories %}
+          <option value="{{ cat }}">{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+        <label for="filter_scanner" class="form-label">Scanner</label>
+        <select id="filter_scanner" class="form-select" onchange="filterFindings()">
+          <option value="">All Scanners</option>
+          {% set scanners = findings|map(attribute='scanner')|list|unique|sort %}
+          {% for scanner in scanners %}
+          <option value="{{ scanner }}">{{ scanner }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+        <label for="search_findings" class="form-label">Search</label>
+        <input type="text" id="search_findings" class="form-input" placeholder="Search by title or description..." oninput="filterFindings()">
+      </div>
+    </div>
+  </div>
+
+  <!-- Findings by Severity Groups -->
+  {% set severity_groups = {
+    'critical': findings|selectattr('severity', 'equalto', 'critical')|list,
+    'high': findings|selectattr('severity', 'equalto', 'high')|list,
+    'medium': findings|selectattr('severity', 'equalto', 'medium')|list,
+    'low': findings|selectattr('severity', 'equalto', 'low')|list
+  } %}
+  
+  {% for severity in ['critical', 'high', 'medium', 'low'] %}
+    {% set group_findings = severity_groups[severity] %}
+    {% if group_findings|length > 0 %}
+    <div class="findings-group" data-severity="{{ severity }}" style="margin-bottom: var(--spacing-lg);">
+      <div class="findings-group-header card" style="padding: var(--spacing-md); cursor: pointer; user-select: none;" onclick="toggleFindingsGroup('{{ severity }}')">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: var(--spacing-md);">
+            <button class="icon-chevron-down findings-group-toggle" data-group="{{ severity }}" onclick="toggleFindingsGroup('{{ severity }}')" aria-label="Toggle {{ severity }} findings group" aria-expanded="true" style="background: none; border: none; cursor: pointer; padding: var(--spacing-xs); transition: transform var(--transition-base);" type="button">
+              <span aria-hidden="true">⌄</span>
+            </button>
+            <span class="badge badge-{{ severity }}" style="font-size: var(--font-size-base);">{{ severity|upper }}</span>
+            <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+              {{ group_findings|length }} finding{{ 's' if group_findings|length != 1 else '' }}
+            </span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="findings-group-content" data-group="{{ severity }}" style="display: block;">
+        <div class="table-container">
+          <table class="table" role="table" aria-label="{{ severity|upper }} findings">
+            <caption class="sr-only">{{ severity|upper }} severity findings table</caption>
   <thead>
     <tr>
-      <th>Severity</th>
-      <th>Category</th>
-      <th>Title</th>
-      <th>Scanner</th>
+                <th scope="col" style="width: 40px;">
+                  <input type="checkbox" 
+                         id="select-all-{{ severity }}" 
+                         class="select-all-findings" 
+                         onchange="toggleSelectAll(this)" 
+                         aria-label="Select all {{ severity }} findings in this group">
+                </th>
+                <th scope="col" class="sortable" data-sort="category" data-group="{{ severity }}">Category</th>
+                <th scope="col" class="sortable" data-sort="title" data-group="{{ severity }}">Title</th>
+                <th scope="col" class="sortable" data-sort="scanner" data-group="{{ severity }}">Scanner</th>
+                <th scope="col">Actions</th>
     </tr>
   </thead>
   <tbody>
-    {% for f in findings %}
-    <tr>
-      <td>{{ f.severity }}</td>
-      <td>{{ f.category }}</td>
-      <td>{{ f.title }}</td>
-      <td>{{ f.scanner }}</td>
+              {% for finding in group_findings %}
+              <tr class="finding-row" 
+                  data-finding-id="{{ finding.id }}"
+                  data-severity="{{ finding.severity }}"
+                  data-category="{{ finding.category }}"
+                  data-scanner="{{ finding.scanner }}"
+                  data-title="{{ finding.title|lower }}"
+                  data-description="{{ (finding.description or '')|lower }}">
+                <td>
+                  <input type="checkbox" 
+                         id="finding-checkbox-{{ finding.id }}"
+                         class="finding-checkbox" 
+                         value="{{ finding.id }}"
+                         onchange="updateBulkActions()"
+                         aria-label="Select finding {{ finding.title }}">
+                </td>
+                <td>{{ finding.category }}</td>
+                <td>
+                  <button class="finding-toggle" 
+                          onclick="toggleFindingDetails('finding-{{ finding.id }}', this)"
+                          style="background: none; border: none; color: var(--color-primary); cursor: pointer; text-align: left; padding: 0; font-weight: var(--font-weight-medium);">
+                    {{ finding.title }}
+                    <span class="finding-toggle-icon" aria-hidden="true">⌄</span>
+                  </button>
+                </td>
+                <td>{{ finding.scanner }}</td>
+                <td>
+                  <button class="btn btn-sm" onclick="copyFindingData('{{ finding.id }}')" aria-label="Copy finding data" style="padding: 2px 6px; min-height: auto;">
+                    <span aria-hidden="true">📋</span>
+                  </button>
+                </td>
+              </tr>
+              <tr class="finding-details" id="finding-{{ finding.id }}" style="display: none;">
+                <td colspan="4" style="padding: var(--spacing-lg); background-color: var(--color-gray-50);">
+                  <div class="finding-detail-content">
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>Description:</strong>
+                      <p style="margin: var(--spacing-xs) 0 0 0; white-space: pre-wrap;">{{ finding.description or 'No description available' }}</p>
+                    </div>
+                    {% if finding.location %}
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>Location:</strong>
+                      <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm);">{{ finding.location }}</code>
+                    </div>
+                    {% endif %}
+                    {% if finding.evidence %}
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>Evidence:</strong>
+                      <pre style="margin: var(--spacing-xs) 0 0 0; background: var(--color-gray-100); padding: var(--spacing-md); border-radius: var(--radius-md); overflow-x: auto; font-size: var(--font-size-sm);">{{ finding.evidence|tojson(indent=2) if finding.evidence else 'No evidence' }}</pre>
+                    </div>
+                    {% endif %}
+                    {% if finding.remediation %}
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>Remediation:</strong>
+                      <p style="margin: var(--spacing-xs) 0 0 0; white-space: pre-wrap;">{{ finding.remediation }}</p>
+                    </div>
+                    {% endif %}
+                  </div>
+                </td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  {% else %}
+  <!-- No Findings -->
+  <div class="empty-state card" style="text-align: center; padding: var(--spacing-2xl);">
+    <p style="font-size: var(--font-size-lg); color: var(--color-text-secondary); margin-bottom: var(--spacing-md);">
+      No findings
+    </p>
+    <p style="color: var(--color-text-tertiary);">
+      This scan completed with no security issues detected.
+    </p>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// ============================================
+// Finding Details Toggle
+// ============================================
+
+function toggleFindingDetails(findingId, button) {
+  const detailsRow = document.getElementById(findingId);
+  if (!detailsRow) return;
+  
+  const isVisible = detailsRow.style.display !== 'none';
+  detailsRow.style.display = isVisible ? 'none' : 'table-row';
+  
+  // Update toggle icon
+  if (button) {
+    const icon = button.querySelector('.finding-toggle-icon');
+    if (icon) {
+      icon.textContent = isVisible ? '⌄' : '⌃';
+    }
+  }
+}
+
+// ============================================
+// Findings Group Toggle
+// ============================================
+
+// Findings group toggle
+function toggleFindingsGroup(severity) {
+  const content = document.querySelector(`.findings-group-content[data-group="${severity}"]`);
+  const toggle = document.querySelector(`.findings-group-toggle[data-group="${severity}"]`);
+  const isVisible = content.style.display !== 'none';
+  
+  content.style.display = isVisible ? 'none' : 'block';
+  if (toggle) {
+    toggle.style.transform = isVisible ? 'rotate(0deg)' : 'rotate(-90deg)';
+  }
+}
+
+// Expand/Collapse All
+function expandAllFindings() {
+  document.querySelectorAll('.findings-group-content').forEach(el => {
+    el.style.display = 'block';
+  });
+  document.querySelectorAll('.findings-group-toggle').forEach(el => {
+    el.style.transform = 'rotate(-90deg)';
+  });
+}
+
+function collapseAllFindings() {
+  document.querySelectorAll('.findings-group-content').forEach(el => {
+    el.style.display = 'none';
+  });
+  document.querySelectorAll('.findings-group-toggle').forEach(el => {
+    el.style.transform = 'rotate(0deg)';
+  });
+}
+
+// ============================================
+// Findings Filtering
+// ============================================
+
+function filterFindings() {
+  const severity = document.getElementById('filter_severity')?.value.toLowerCase() || '';
+  const category = document.getElementById('filter_category')?.value.toLowerCase() || '';
+  const scanner = document.getElementById('filter_scanner')?.value.toLowerCase() || '';
+  const search = document.getElementById('search_findings')?.value.toLowerCase() || '';
+  
+  const rows = document.querySelectorAll('.finding-row');
+  rows.forEach(row => {
+    const rowSeverity = row.getAttribute('data-severity') || '';
+    const rowCategory = (row.getAttribute('data-category') || '').toLowerCase();
+    const rowScanner = (row.getAttribute('data-scanner') || '').toLowerCase();
+    const rowTitle = row.getAttribute('data-title') || '';
+    const rowDescription = row.getAttribute('data-description') || '';
+    
+    let show = true;
+    
+    if (severity && rowSeverity !== severity) show = false;
+    if (category && rowCategory !== category) show = false;
+    if (scanner && rowScanner !== scanner) show = false;
+    if (search && !rowTitle.includes(search) && !rowDescription.includes(search)) show = false;
+    
+    row.style.display = show ? '' : 'none';
+    
+    // Hide details row if parent is hidden
+    const findingId = row.getAttribute('data-finding-id');
+    if (findingId && !show) {
+      const detailsRow = document.getElementById('finding-' + findingId);
+      if (detailsRow) detailsRow.style.display = 'none';
+    }
+  });
+  
+  // Show/hide groups based on visible findings
+  document.querySelectorAll('.findings-group').forEach(group => {
+    const visibleRows = group.querySelectorAll('.finding-row:not([style*="display: none"])');
+    group.style.display = visibleRows.length > 0 ? '' : 'none';
+  });
+  
+  // Update bulk actions
+  updateBulkActions();
+}
+
+// ============================================
+// Findings Sorting
+// ============================================
+
+let currentSort = { group: null, field: null, order: 'asc' };
+
+function sortFindings(group, field) {
+  const groupContent = document.querySelector(`.findings-group-content[data-group="${group}"]`);
+  if (!groupContent) return;
+  
+  const tbody = groupContent.querySelector('tbody');
+  if (!tbody) return;
+  
+  const rows = Array.from(tbody.querySelectorAll('.finding-row'));
+  
+  // Determine sort order
+  if (currentSort.group === group && currentSort.field === field) {
+    currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSort.group = group;
+    currentSort.field = field;
+    currentSort.order = 'asc';
+  }
+  
+  // Sort rows
+  rows.sort((a, b) => {
+    let aVal, bVal;
+    
+    switch (field) {
+      case 'category':
+        aVal = a.getAttribute('data-category') || '';
+        bVal = b.getAttribute('data-category') || '';
+        break;
+      case 'title':
+        aVal = a.getAttribute('data-title') || '';
+        bVal = b.getAttribute('data-title') || '';
+        break;
+      case 'scanner':
+        aVal = a.getAttribute('data-scanner') || '';
+        bVal = b.getAttribute('data-scanner') || '';
+        break;
+      default:
+        return 0;
+    }
+    
+    if (currentSort.order === 'asc') {
+      return aVal.localeCompare(bVal);
+    } else {
+      return bVal.localeCompare(aVal);
+    }
+  });
+  
+  // Re-append sorted rows
+  rows.forEach(row => tbody.appendChild(row));
+  
+  // Update sort indicators
+  document.querySelectorAll(`.sortable[data-group="${group}"]`).forEach(header => {
+    header.classList.remove('asc', 'desc');
+    if (header.getAttribute('data-sort') === field) {
+      header.classList.add(currentSort.order);
+    }
+  });
+}
+
+// Initialize sortable headers when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initFindingsSorting);
+} else {
+  initFindingsSorting();
+}
+
+function initFindingsSorting() {
+  document.querySelectorAll('.sortable[data-group]').forEach(header => {
+    header.addEventListener('click', function() {
+      const group = this.getAttribute('data-group');
+      const field = this.getAttribute('data-sort');
+      sortFindings(group, field);
+    });
+  });
+}
+
+// ============================================
+// Bulk Selection
+// ============================================
+
+function toggleSelectAll(checkbox) {
+  const group = checkbox.closest('.findings-group-content');
+  if (!group) return;
+  
+  const checkboxes = group.querySelectorAll('.finding-checkbox');
+  checkboxes.forEach(cb => {
+    cb.checked = checkbox.checked;
+  });
+  
+  updateBulkActions();
+}
+
+function updateBulkActions() {
+  const checkboxes = document.querySelectorAll('.finding-checkbox:checked');
+  const count = checkboxes.length;
+  const bulkActions = document.getElementById('bulk-actions');
+  const selectedCount = document.getElementById('selected-count');
+  
+  if (bulkActions) {
+    if (count > 0) {
+      bulkActions.style.display = 'flex';
+      bulkActions.classList.add('show');
+    } else {
+      bulkActions.style.display = 'none';
+      bulkActions.classList.remove('show');
+    }
+  }
+  
+  if (selectedCount) {
+    selectedCount.textContent = `${count} selected`;
+  }
+}
+
+function clearSelection() {
+  document.querySelectorAll('.finding-checkbox').forEach(cb => {
+    cb.checked = false;
+  });
+  document.querySelectorAll('.select-all-findings').forEach(cb => {
+    cb.checked = false;
+  });
+  updateBulkActions();
+}
+
+function exportSelectedFindings() {
+  const checkboxes = document.querySelectorAll('.finding-checkbox:checked');
+  const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+  
+  if (selectedIds.length === 0) {
+    alert('No findings selected');
+    return;
+  }
+  
+  const findings = [];
+  selectedIds.forEach(id => {
+    const row = document.querySelector(`tr[data-finding-id="${id}"]`);
+    if (row) {
+      const finding = {
+        id: id,
+        severity: row.getAttribute('data-severity'),
+        category: row.getAttribute('data-category'),
+        scanner: row.getAttribute('data-scanner'),
+        title: row.querySelector('.finding-toggle')?.textContent.replace('⌄', '').replace('⌃', '').trim()
+      };
+      
+      const detailsRow = document.getElementById('finding-' + id);
+      if (detailsRow) {
+        const descEl = Array.from(detailsRow.querySelectorAll('strong')).find(el => el.textContent.includes('Description'));
+        if (descEl && descEl.nextElementSibling) {
+          finding.description = descEl.nextElementSibling.textContent.trim();
+        }
+        
+        const locationEl = detailsRow.querySelector('code');
+        if (locationEl) {
+          finding.location = locationEl.textContent.trim();
+        }
+      }
+      
+      findings.push(finding);
+    }
+  });
+  
+  const dataStr = JSON.stringify(findings, null, 2);
+  const dataBlob = new Blob([dataStr], { type: 'application/json' });
+  const url = URL.createObjectURL(dataBlob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `sentrascan-findings-${Date.now()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  
+  showToast(`Exported ${findings.length} finding(s)`, 'success');
+}
+
+// Simple toast function (will be enhanced later)
+function showToast(message, type) {
+  if (typeof window.showToast === 'function') {
+    window.showToast(message, type);
+    return;
+  }
+  
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type || 'info'}`;
+  toast.textContent = message;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 24px;
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-index-tooltip);
+  `;
+  document.body.appendChild(toast);
+  
+  setTimeout(() => {
+    if (toast.parentNode) {
+      document.body.removeChild(toast);
+    }
+  }, 3000);
+}
+
+// Copy finding data
+function copyFindingData(findingId) {
+  const findingRow = document.querySelector(`tr[data-finding-id="${findingId}"]`);
+  if (!findingRow) return;
+  
+  const detailsRow = document.getElementById(`finding-${findingId}`);
+  
+  const finding = {
+    id: findingId,
+    severity: findingRow.getAttribute('data-severity') || '',
+    category: findingRow.getAttribute('data-category') || '',
+    scanner: findingRow.getAttribute('data-scanner') || '',
+    title: findingRow.querySelector('.finding-toggle')?.textContent.replace('⌄', '').replace('⌃', '').trim() || ''
+  };
+  
+  if (detailsRow) {
+    const descEl = Array.from(detailsRow.querySelectorAll('strong')).find(el => el.textContent.includes('Description'));
+    if (descEl && descEl.nextElementSibling) {
+      finding.description = descEl.nextElementSibling.textContent.trim();
+    }
+    
+    const locationEl = detailsRow.querySelector('code');
+    if (locationEl) {
+      finding.location = locationEl.textContent.trim();
+    }
+    
+    const evidenceEl = Array.from(detailsRow.querySelectorAll('strong')).find(el => el.textContent.includes('Evidence'));
+    if (evidenceEl && evidenceEl.nextElementSibling) {
+      finding.evidence = evidenceEl.nextElementSibling.textContent.trim();
+    }
+    
+    const remediationEl = Array.from(detailsRow.querySelectorAll('strong')).find(el => el.textContent.includes('Remediation'));
+    if (remediationEl && remediationEl.nextElementSibling) {
+      finding.remediation = remediationEl.nextElementSibling.textContent.trim();
+    }
+  }
+  
+  copyToClipboard(JSON.stringify(finding, null, 2));
+}
+</script>
+
+<!-- Create Baseline Modal -->
+<div id="create-baseline-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: var(--z-index-modal); align-items: center; justify-content: center;">
+  <div class="modal-content card" style="max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative;">
+    <button class="modal-close" onclick="closeCreateBaselineModal()" aria-label="Close modal" style="position: absolute; top: var(--spacing-md); right: var(--spacing-md); background: none; border: none; font-size: var(--font-size-xl); cursor: pointer; color: var(--color-text-secondary);">×</button>
+    
+    <h2 style="margin: 0 0 var(--spacing-lg) 0;">Create Baseline</h2>
+    
+    <form id="create-baseline-form" onsubmit="submitCreateBaseline(event)">
+      <div class="form-group">
+        <label for="baseline_name" class="form-label">
+          Name <span class="required-indicator">*</span>
+        </label>
+        <input 
+          type="text" 
+          id="baseline_name" 
+          name="name" 
+          class="form-input" 
+          required
+          aria-required="true"
+          aria-invalid="false"
+          placeholder="e.g., production-baseline-2025-01"
+          aria-describedby="baseline_name_help baseline_name_error">
+        <div id="baseline_name_help" class="form-help-text">
+          A descriptive name for this baseline
+        </div>
+        <div id="baseline_name_error" class="form-error-message" role="alert"></div>
+      </div>
+
+      <div class="form-group">
+        <label for="baseline_description" class="form-label">
+          Description
+        </label>
+        <textarea 
+          id="baseline_description" 
+          name="description" 
+          class="form-textarea" 
+          rows="3"
+          placeholder="Optional description of this baseline"
+          aria-describedby="baseline_description_help"></textarea>
+        <div id="baseline_description_help" class="form-help-text">
+          Optional description explaining what this baseline represents
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="baseline_is_active" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+          <input 
+            type="checkbox" 
+            id="baseline_is_active"
+            name="is_active" 
+            checked
+            class="form-checkbox"
+            aria-describedby="baseline_is_active_help">
+          <span>Set as active baseline</span>
+        </label>
+        <div id="baseline_is_active_help" class="form-help-text">
+          Active baselines are used for automatic drift detection
+        </div>
+      </div>
+
+      <input type="hidden" name="scan_id" value="{{ scan.id }}" aria-hidden="true">
+      <input type="hidden" name="baseline_type" value="{{ scan.scan_type }}" aria-hidden="true">
+      <input type="hidden" name="target_hash" value="{{ scan.target_hash or '' }}" aria-hidden="true">
+
+      <div class="form-actions" style="margin-top: var(--spacing-lg); display: flex; gap: var(--spacing-md); justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary" onclick="closeCreateBaselineModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="create-baseline-submit">
+          <span class="submit-text">Create Baseline</span>
+          <span class="submit-spinner spinner spinner-sm" style="display: none; margin-left: var(--spacing-xs);" aria-hidden="true"></span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Create Baseline Modal Functions
+function openCreateBaselineModal() {
+  const modal = document.getElementById('create-baseline-modal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  
+  // Focus on name input
+  setTimeout(() => {
+    document.getElementById('baseline_name').focus();
+  }, 100);
+  
+  // Trap focus within modal
+  trapFocus(modal);
+}
+
+function closeCreateBaselineModal() {
+  const modal = document.getElementById('create-baseline-modal');
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+  
+  // Reset form
+  document.getElementById('create-baseline-form').reset();
+  document.getElementById('baseline_name_error').textContent = '';
+  document.getElementById('baseline_name').classList.remove('form-input-error');
+}
+
+function submitCreateBaseline(event) {
+  event.preventDefault();
+  
+  const form = event.target;
+  const formData = new FormData(form);
+  const data = {
+    name: formData.get('name'),
+    description: formData.get('description') || null,
+    is_active: formData.get('is_active') === 'on',
+    scan_id: formData.get('scan_id'),
+    baseline_type: formData.get('baseline_type'),
+    target_hash: formData.get('target_hash') || null,
+    content: {} // Will be populated from scan data
+  };
+  
+  // Validate
+  if (!data.name || data.name.trim().length === 0) {
+    const errorDiv = document.getElementById('baseline_name_error');
+    const nameInput = document.getElementById('baseline_name');
+    errorDiv.textContent = 'Baseline name is required';
+    nameInput.classList.add('form-input-error');
+    nameInput.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  
+  // Show loading state
+  const submitBtn = document.getElementById('create-baseline-submit');
+  const spinner = submitBtn.querySelector('.submit-spinner');
+  const submitText = submitBtn.querySelector('.submit-text');
+  submitBtn.disabled = true;
+  submitBtn.setAttribute('aria-busy', 'true');
+  spinner.style.display = 'inline-block';
+  submitText.textContent = 'Creating...';
+  
+  // Create baseline using UI endpoint (supports session auth)
+  const formData = new FormData();
+  formData.append('name', data.name);
+  if (data.description) formData.append('description', data.description);
+  formData.append('is_active', data.is_active ? 'on' : 'off');
+  formData.append('scan_id', data.scan_id);
+  formData.append('baseline_type', data.baseline_type);
+  if (data.target_hash) formData.append('target_hash', data.target_hash);
+  
+  // Create baseline
+  fetch('/ui/baselines', {
+    method: 'POST',
+    body: formData
+  })
+    .then(response => {
+      if (response.ok || response.redirected) {
+        showToast('Baseline created successfully', 'success');
+        closeCreateBaselineModal();
+        // Redirect to baselines page
+        if (response.redirected) {
+          window.location.href = response.url;
+        } else {
+          window.location.href = '/baselines';
+        }
+      } else {
+        return response.text().then(text => {
+          let errorMsg = 'Failed to create baseline';
+          try {
+            const err = JSON.parse(text);
+            errorMsg = err.detail || errorMsg;
+          } catch (e) {
+            errorMsg = text || errorMsg;
+          }
+          throw new Error(errorMsg);
+        });
+      }
+    })
+    .catch(error => {
+      console.error('Error creating baseline:', error);
+      showToast(error.message || 'Failed to create baseline', 'error');
+      
+      // Reset button state
+      submitBtn.disabled = false;
+      submitBtn.setAttribute('aria-busy', 'false');
+      spinner.style.display = 'none';
+      submitText.textContent = 'Create Baseline';
+    });
+}
+
+// Focus trap for modal
+function trapFocus(modal) {
+  const focusableElements = modal.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+  
+  modal.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement.focus();
+        }
+      }
+    } else if (e.key === 'Escape') {
+      closeCreateBaselineModal();
+    }
+  });
+}
+
+// Close modal on overlay click
+document.getElementById('create-baseline-modal').addEventListener('click', function(e) {
+  if (e.target === this) {
+    closeCreateBaselineModal();
+  }
+});
+</script>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/utils.js" defer></script>
+<script src="/static/js/realtime.js" defer></script>
+<script>
+// Auto-update scan status if scan is queued or running
+document.addEventListener('DOMContentLoaded', function() {
+  const scanId = '{{ scan.id }}';
+  const scanStatus = '{{ scan.scan_status }}';
+  
+  if (scanStatus === 'queued' || scanStatus === 'running') {
+    // Start auto-updating scan status
+    autoUpdateScanStatus(scanId, {
+      badgeElement: document.getElementById('scan-status-badge'),
+      progressElement: document.getElementById('scan-progress'),
+      onStatusChange: function(data) {
+        // Update findings count if available
+        const findingsCountEl = document.querySelector('[data-findings-count]');
+        if (findingsCountEl && data.total_findings !== undefined) {
+          findingsCountEl.textContent = data.total_findings;
+        }
+      }
+    });
+  }
+});
+</script>
 {% endblock %}
