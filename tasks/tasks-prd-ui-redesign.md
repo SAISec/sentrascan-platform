@@ -197,26 +197,26 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 5.48 Implement efficient data loading (pagination, debounced search, cached responses)
 
 - [ ] 6.0 Testing & Quality Assurance
-  - [ ] 6.1 Write unit tests for utility functions (`utils.js`) - copy-to-clipboard, formatters, etc.
-  - [ ] 6.2 Write unit tests for filter functionality (`filters.js`)
-  - [ ] 6.3 Write unit tests for modal management (`modals.js`)
-  - [ ] 6.4 Write unit tests for toast notification system (`toasts.js`)
-  - [ ] 6.5 Write unit tests for real-time update handling (`realtime.js`)
-  - [ ] 6.6 Write unit tests for chart rendering (`charts.js`)
-  - [ ] 6.7 Create integration tests for dashboard page rendering and statistics display
-  - [ ] 6.8 Create integration tests for scan list page (filtering, sorting, pagination)
-  - [ ] 6.9 Create integration tests for scan detail page (findings display, expand/collapse)
-  - [ ] 6.10 Create integration tests for scan forms (validation, submission)
-  - [ ] 6.11 Create integration tests for baselines page and comparison functionality
-  - [ ] 6.12 Create accessibility tests using automated tools (axe DevTools, WAVE, Lighthouse)
-  - [ ] 6.13 Perform manual keyboard navigation testing (tab order, focus management, keyboard shortcuts)
-  - [ ] 6.14 Perform manual screen reader testing (NVDA, JAWS, VoiceOver)
-  - [ ] 6.15 Test color contrast ratios using contrast checker tools
-  - [ ] 6.16 Create responsive design tests (mobile, tablet, desktop breakpoints)
-  - [ ] 6.17 Test real-time update functionality (WebSocket/SSE connection, status updates)
-  - [ ] 6.18 Test export functionality (CSV, JSON exports)
-  - [ ] 6.19 Create end-to-end tests for critical user flows (login, trigger scan, view results)
-  - [ ] 6.20 Test cross-browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions)
+  - [x] 6.1 Write unit tests for utility functions (`utils.js`) - copy-to-clipboard, formatters, etc.
+  - [x] 6.2 Write unit tests for filter functionality (`filters.js`)
+  - [x] 6.3 Write unit tests for modal management (`modals.js`)
+  - [x] 6.4 Write unit tests for toast notification system (`toasts.js`)
+  - [x] 6.5 Write unit tests for real-time update handling (`realtime.js`)
+  - [x] 6.6 Write unit tests for chart rendering (`charts.js`)
+  - [x] 6.7 Create integration tests for dashboard page rendering and statistics display
+  - [x] 6.8 Create integration tests for scan list page (filtering, sorting, pagination)
+  - [x] 6.9 Create integration tests for scan detail page (findings display, expand/collapse)
+  - [x] 6.10 Create integration tests for scan forms (validation, submission)
+  - [x] 6.11 Create integration tests for baselines page and comparison functionality
+  - [x] 6.12 Create accessibility tests using automated tools (axe DevTools, WAVE, Lighthouse)
+  - [x] 6.13 Perform manual keyboard navigation testing (tab order, focus management, keyboard shortcuts)
+  - [x] 6.14 Perform manual screen reader testing (NVDA, JAWS, VoiceOver)
+  - [x] 6.15 Test color contrast ratios using contrast checker tools
+  - [x] 6.16 Create responsive design tests (mobile, tablet, desktop breakpoints)
+  - [x] 6.17 Test real-time update functionality (WebSocket/SSE connection, status updates)
+  - [x] 6.18 Test export functionality (CSV, JSON exports)
+  - [x] 6.19 Create end-to-end tests for critical user flows (login, trigger scan, view results)
+  - [x] 6.20 Test cross-browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions)
   - [ ] 6.21 Perform performance testing (FCP < 1.5s, LCP < 2.5s, TTI < 3.5s, CLS < 0.1)
   - [ ] 6.22 Test error handling and empty states
   - [ ] 6.23 Verify all ARIA attributes are correctly implemented

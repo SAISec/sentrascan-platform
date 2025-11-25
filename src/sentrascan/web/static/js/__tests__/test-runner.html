@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Utils.js Unit Tests</title>
+  
+  <!-- Jasmine CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jasmine-core@5.1.1/lib/jasmine-5.1.1/jasmine.css">
+  
+  <!-- Jasmine JavaScript -->
+  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.1.1/lib/jasmine-5.1.1/jasmine.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.1.1/lib/jasmine-5.1.1/jasmine-html.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jasmine-core@5.1.1/lib/jasmine-5.1.1/boot.js"></script>
+  
+  <!-- axe-core for accessibility testing -->
+  <script src="https://cdn.jsdelivr.net/npm/axe-core@4.8.0/axe.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-header {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-header h1 {
+      margin: 0 0 10px 0;
+      color: #333;
+    }
+    .test-header p {
+      margin: 0;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-header">
+    <h1>JavaScript Unit Tests</h1>
+    <p>Testing utility functions, filters, and filtering functionality</p>
+  </div>
+
+  <!-- Load the source files -->
+  <script src="../utils.js"></script>
+  <script src="../filters.js"></script>
+  <script src="../filtering.js"></script>
+  <script src="../modal.js"></script>
+  <script src="../toast.js"></script>
+  <script src="../realtime.js"></script>
+  <script src="../charts.js"></script>
+  
+  <!-- Load the test files -->
+  <script src="utils.test.js"></script>
+  <script src="filters.test.js"></script>
+  <script src="modal.test.js"></script>
+  <script src="toast.test.js"></script>
+  <script src="realtime.test.js"></script>
+  <script src="charts.test.js"></script>
+  <script src="integration.test.js"></script>
+  <script src="accessibility.test.js"></script>
+</body>
+</html>
+
