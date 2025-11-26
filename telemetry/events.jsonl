@@ -1,0 +1,5 @@
+{"timestamp": "2025-11-26T20:55:44.056169Z", "event": {"type": "system", "event_type": "startup", "attributes": {}}, "resource": {"service.name": "sentrascan-platform", "service.version": "unknown"}, "attributes": {}}
+{"timestamp": "2025-11-26T20:55:45.214349Z", "event": {"type": "system", "event_type": "startup", "attributes": {}}, "resource": {"service.name": "sentrascan-platform", "service.version": "unknown"}, "attributes": {}}
+{"timestamp": "2025-11-26T20:55:49.667270Z", "event": {"type": "system", "event_type": "startup", "attributes": {}}, "resource": {"service.name": "sentrascan-platform", "service.version": "unknown"}, "attributes": {}}
+{"timestamp": "2025-11-26T20:55:52.910653Z", "event": {"type": "system", "event_type": "startup", "attributes": {}}, "resource": {"service.name": "sentrascan-platform", "service.version": "unknown"}, "attributes": {}}
+{"timestamp": "2025-11-26T20:56:15.461861Z", "event": {"type": "system", "event_type": "startup", "attributes": {}}, "resource": {"service.name": "sentrascan-platform", "service.version": "unknown"}, "attributes": {}}

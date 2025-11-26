@@ -21,6 +21,7 @@ dependencies = [
   "python-multipart>=0.0.9",
   "modelaudit>=0.2.17",
   "semgrep>=1.84.0",
+  "structlog>=24.1.0",
   # optional for runtime probe; if unavailable, probe falls back safely
   # "mcp>=1.0.0",
 ]

@@ -19,6 +19,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
       - MODELAUDIT_CACHE_DIR=/cache
+      # Container access key (must match build-time key)
+      - SENTRASCAN_ACCESS_KEY=Sentrascan@25!
       # Optional: License key validation
       # - SENTRASCAN_LICENSE_KEY=${LICENSE_KEY}
     depends_on:

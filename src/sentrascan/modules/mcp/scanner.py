@@ -11,7 +11,7 @@ from sentrascan.modules.mcp.sast import SASTRunner
 from sentrascan.modules.mcp.rules import RuleScanner
 from sentrascan.modules.mcp.handshake import MCPProbe
 from sentrascan.modules.mcp.secrets import TruffleHogRunner, GitleaksRunner
-from sentrascan.modules.mcp.zap import ZapRunner
+# ZAP removed - no longer used
 from sentrascan.modules.mcp.probe_runtime import RuntimeProbe
 
 DEFAULT_DISCOVERY_PATHS = [
@@ -318,28 +318,7 @@ class MCPScanner:
         except Exception:
             pass
 
-        # ZAP baseline (optional; requires zap-baseline.py)
-        try:
-            zap = ZapRunner()
-            if zap.available():
-                for z in zap.run():
-                    sev_key = (z["severity"].lower() + "_count")
-                    if sev_key in sev:
-                        sev[sev_key] += 1
-                    issue_types.append("dast")
-                    db.add(Finding(
-                        scan_id=scan.id,
-                        module="mcp",
-                        scanner=z.get("engine"),
-                        severity=z.get("severity"),
-                        category=z.get("category"),
-                        title=z.get("title"),
-                        description=z.get("description"),
-                        location=z.get("location"),
-                        evidence=z.get("evidence"),
-                    ))
-        except Exception:
-            pass
+        # ZAP baseline removed - no longer supported
         scan.duration_ms = int((time.time() - start) * 1000)
         scan.total_findings = sum(sev.values())
         scan.critical_count = sev["critical_count"]

@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import Request as StarletteRequest
+from starlette.middleware.base import BaseHTTPMiddleware
 import json
 import asyncio
 from fastapi.templating import Jinja2Templates
@@ -16,13 +17,99 @@ from sentrascan.core.storage import init_db, SessionLocal
 from sentrascan.modules.model.scanner import ModelScanner
 from sentrascan.modules.mcp.scanner import MCPScanner
 from sentrascan.core.policy import PolicyEngine
+from sentrascan.core.logging import configure_logging, get_logger
+from sentrascan.core.masking import mask_dict, mask_api_key
+from sentrascan.core.telemetry import get_telemetry, initialize_telemetry
+from sentrascan.core.container_protection import check_container_access
+from sentrascan.core.log_retention import archive_old_logs, archive_telemetry
 import csv
 import io
 import secrets
 import random
 import re
+import time
+
+# Check container access (build-time protection)
+check_container_access()
+
+# Initialize structured logging
+logger = configure_logging()
+logger.info("SentraScan Platform starting", version=__import__("sentrascan", fromlist=["__version__"]).__version__)
+
+# Initialize telemetry
+initialize_telemetry()
+telemetry = get_telemetry()
+
+# Archive old logs on startup (background task)
+try:
+    archive_old_logs()
+    archive_telemetry()
+except Exception:
+    pass  # Don't fail startup if archiving fails
 
 app = FastAPI(title="SentraScan Platform")
+
+# Logging middleware
+class LoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        start_time = time.time()
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Log request
+        logger.info(
+            "request_started",
+            method=request.method,
+            path=request.url.path,
+            client_ip=client_ip,
+            query_params=str(request.query_params) if request.query_params else None
+        )
+        
+        try:
+            response = await call_next(request)
+            process_time = time.time() - start_time
+            
+            # Log response
+            logger.info(
+                "request_completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                process_time_ms=round(process_time * 1000, 2),
+                client_ip=client_ip
+            )
+            
+            # Capture API call in telemetry
+            try:
+                api_key_id = None
+                if hasattr(request.state, "api_key_id"):
+                    api_key_id = request.state.api_key_id
+                telemetry.capture_api_call(
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    duration_ms=round(process_time * 1000, 2),
+                    api_key_id=api_key_id
+                )
+            except Exception:
+                pass  # Don't break request handling if telemetry fails
+            
+            return response
+        except Exception as e:
+            process_time = time.time() - start_time
+            logger.error(
+                "request_failed",
+                method=request.method,
+                path=request.url.path,
+                error=str(e),
+                error_type=type(e).__name__,
+                process_time_ms=round(process_time * 1000, 2),
+                client_ip=client_ip,
+                exc_info=True
+            )
+            raise
+
+app.add_middleware(LoggingMiddleware)
 
 # Session auth (signed cookie)
 import hmac, hashlib, base64
@@ -184,31 +271,116 @@ def health():
 def scan_model(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     # RBAC: only admin can trigger scans
     if getattr(api_key, "role", "viewer") != "admin":
+        logger.warning(
+            "scan_denied",
+            reason="insufficient_role",
+            required_role="admin",
+            user_role=getattr(api_key, "role", "unknown"),
+            api_key_id=getattr(api_key, "id", None)
+        )
         raise HTTPException(403, "Insufficient role: admin required")
     # Validate required fields
     if not payload:
+        logger.warning("scan_validation_failed", reason="missing_payload", api_key_id=getattr(api_key, "id", None))
         raise HTTPException(400, "Request body is required")
     paths = payload.get("paths") or ([payload.get("model_path")] if payload.get("model_path") else None)
+    
+    logger.info(
+        "model_scan_started",
+        api_key_id=getattr(api_key, "id", None),
+        paths_count=len(paths) if paths else 0,
+        payload_keys=list(payload.keys())
+    )
     if not paths or (isinstance(paths, list) and len(paths) == 0):
         raise HTTPException(400, "paths or model_path is required")
     sbom = payload.get("generate_sbom")
     policy_path = payload.get("policy")
     pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_model()
     ms = ModelScanner(policy=pe)
-    scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=payload.get("timeout", 0), db=db)
-    return ms.to_report(scan)
+    try:
+        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=payload.get("timeout", 0), db=db)
+        
+        # Capture telemetry
+        telemetry.capture_scan_event(
+            scan_type="model",
+            scan_id=str(scan.id),
+            status="completed",
+            api_key_id=getattr(api_key, "id", None),
+            findings_count=scan.total_findings,
+            duration_ms=scan.duration_ms if hasattr(scan, "duration_ms") else None
+        )
+        
+        logger.info(
+            "model_scan_completed",
+            scan_id=scan.id,
+            api_key_id=getattr(api_key, "id", None),
+            total_findings=scan.total_findings,
+            passed=scan.passed
+        )
+        
+        return ms.to_report(scan)
+    except Exception as e:
+        logger.error(
+            "model_scan_failed",
+            api_key_id=getattr(api_key, "id", None),
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True
+        )
+        telemetry.capture_scan_event(
+            scan_type="model",
+            scan_id="unknown",
+            status="failed",
+            api_key_id=getattr(api_key, "id", None),
+            error=str(e)
+        )
+        raise
 @app.post("/api/v1/mcp/scans")
 def scan_mcp(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     # RBAC: only admin can trigger scans
     if getattr(api_key, "role", "viewer") != "admin":
+        logger.warning(
+            "scan_denied",
+            reason="insufficient_role",
+            required_role="admin",
+            user_role=getattr(api_key, "role", "unknown"),
+            api_key_id=getattr(api_key, "id", None),
+            scan_type="mcp"
+        )
         raise HTTPException(403, "Insufficient role: admin required")
     configs = payload.get("config_paths") or []
     auto = bool(payload.get("auto_discover", False))
+    
+    logger.info(
+        "mcp_scan_started",
+        api_key_id=getattr(api_key, "id", None),
+        config_paths_count=len(configs),
+        auto_discover=auto,
+        timeout=payload.get("timeout", 60)
+    )
+    
     policy_path = payload.get("policy")
     pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_mcp()
     scanner = MCPScanner(policy=pe)
-    scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=payload.get("timeout", 60), db=db)
-    return scanner.to_report(scan)
+    try:
+        scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=payload.get("timeout", 60), db=db)
+        logger.info(
+            "mcp_scan_completed",
+            scan_id=scan.id,
+            api_key_id=getattr(api_key, "id", None),
+            total_findings=scan.total_findings,
+            passed=scan.passed
+        )
+        return scanner.to_report(scan)
+    except Exception as e:
+        logger.error(
+            "mcp_scan_failed",
+            api_key_id=getattr(api_key, "id", None),
+            error=str(e),
+            error_type=type(e).__name__,
+            exc_info=True
+        )
+        raise
 
 # Jobs queue (simple worker)
 from threading import Thread, Event
@@ -742,9 +914,33 @@ def ui_login(request: Request):
 def ui_login_post(request: Request, response: Response, api_key: str = Form(...)):
     db = get_db_session()
     try:
+        masked_key = mask_api_key(api_key)
         rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
         if not rec:
+            logger.warning(
+                "login_failed",
+                reason="invalid_api_key",
+                api_key_masked=masked_key,
+                client_ip=request.client.host if request.client else "unknown"
+            )
             return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid API key"}, status_code=401)
+        
+        logger.info(
+            "login_success",
+            api_key_id=rec.id,
+            role=rec.role,
+            api_key_masked=masked_key,
+            client_ip=request.client.host if request.client else "unknown"
+        )
+        
+        # Capture telemetry
+        telemetry.capture_auth_event(
+            event_type="login",
+            success=True,
+            api_key_id=rec.id,
+            role=rec.role
+        )
+        
         resp = RedirectResponse(url="/", status_code=302)
         resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
         return resp
@@ -1335,6 +1531,22 @@ def create_api_key(request: Request, name: str | None = Form(None), db: Session 
     db.commit()
     db.refresh(api_key_record)
     
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="api_key_created",
+        success=True,
+        api_key_id=api_key_record.id,
+        created_by=user.id if user else None,
+        key_name=name
+    )
+    
+    logger.info(
+        "api_key_created",
+        api_key_id=api_key_record.id,
+        created_by=user.id if user else None,
+        key_name=name
+    )
+    
     return {
         "id": api_key_record.id,
         "name": api_key_record.name,
@@ -1374,6 +1586,20 @@ def revoke_api_key(key_id: str, request: Request, db: Session = Depends(get_db))
     
     key.is_revoked = True
     db.commit()
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="api_key_revoked",
+        success=True,
+        api_key_id=key_id,
+        revoked_by=user.id if user else None
+    )
+    
+    logger.info(
+        "api_key_revoked",
+        api_key_id=key_id,
+        revoked_by=user.id if user else None
+    )
     
     return {"message": "API key revoked", "id": key_id}
 

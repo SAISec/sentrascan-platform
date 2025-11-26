@@ -17,6 +17,10 @@ RUN pip wheel --no-cache-dir mcp-checkpoint cisco-ai-mcp-scanner -w /wheels
 FROM python:3.11-slim AS builder
 WORKDIR /build
 
+# Build-time container access key (set during build)
+# This key is embedded in the image and must be provided at runtime
+ARG CONTAINER_ACCESS_KEY=Sentrascan@25!
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl ca-certificates tar gzip git git-lfs \
@@ -37,16 +41,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 RUN playwright install chromium && \
     playwright install-deps chromium || true
 
-# Install OWASP ZAP
-ARG ZAP_VERSION_UNDERSCORE=2_15_0
-ARG ZAP_VERSION_DOTTED=2.15.0
-RUN curl -fsSL -o /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh \
-    "https://github.com/zaproxy/zaproxy/releases/download/v${ZAP_VERSION_DOTTED}/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh" && \
-    chmod +x /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh && \
-    /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh -q -dir /opt/zap && \
-    ln -sf /opt/zap/zap-baseline.py /usr/local/bin/zap-baseline.py && \
-    ln -sf /opt/zap/zap.sh /usr/local/bin/zap.sh && \
-    rm -f /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh
+# ZAP removed to reduce container size
 
 # Install uv
 ENV PATH="/root/.local/bin:${PATH}"
@@ -117,11 +112,7 @@ COPY --from=builder --chown=nonroot:nonroot \
     /build/src \
     /app/src
 
-# Copy system tools (ZAP, gitleaks, trufflehog)
-COPY --from=builder --chown=nonroot:nonroot \
-    /opt/zap \
-    /opt/zap
-
+# Copy system tools (gitleaks, trufflehog)
 COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/gitleaks \
     /usr/local/bin/trufflehog \
@@ -132,10 +123,14 @@ COPY --from=builder --chown=nonroot:nonroot \
     /root/.local/bin/uv \
     /usr/local/bin/uv || true
 
+# Build-time container access key (passed from builder stage)
+ARG CONTAINER_ACCESS_KEY=Sentrascan@25!
+ENV CONTAINER_ACCESS_KEY=${CONTAINER_ACCESS_KEY}
+
 # Environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-ENV PATH="/usr/local/bin:/opt/zap:${PATH}"
+ENV PATH="/usr/local/bin:${PATH}"
 ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
 
 # Writable volumes (read-only filesystem except these)

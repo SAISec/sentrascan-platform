@@ -1,23 +1,31 @@
-# Multi-stage build for SentraScan Platform with MCP tools always on
+# Production Dockerfile for SentraScan Platform
+# Multi-stage build optimized for production (no test files, no test dependencies, minimal size)
+# Usage: docker build -f Dockerfile.production -t sentrascan:production .
+
+# ============================================
+# Stage 1: Build wheels for dependencies
+# ============================================
 FROM python:3.11-slim AS wheels
 WORKDIR /wheels
-RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ make && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ make && \
+    rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir wheel
-# Build wheels for MCP tools
+# Build wheels for MCP tools only (no test dependencies)
 RUN pip wheel --no-cache-dir mcp-checkpoint cisco-ai-mcp-scanner -w /wheels
 
-FROM python:3.11-slim AS base
+# ============================================
+# Stage 2: Production runtime
+# ============================================
+FROM python:3.11-slim AS production
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
-# System deps
+# System deps (minimal, no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl ca-certificates tar gzip git git-lfs \
+    curl ca-certificates git git-lfs \
     default-jre-headless libharfbuzz0b libfontconfig1 libfreetype6 \
   && rm -rf /var/lib/apt/lists/* \
   && git lfs install
-
-# ZAP removed to reduce container size
 
 # Install uv (for safe-run probe)
 ENV PATH="/root/.local/bin:${PATH}"
@@ -36,36 +44,44 @@ RUN set -eux; \
     curl -fsSL -o /tmp/trufflehog.tgz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_${th_arch}.tar.gz" && \
     tar -C /usr/local/bin -xzf /tmp/trufflehog.tgz trufflehog && chmod +x /usr/local/bin/trufflehog && rm -f /tmp/trufflehog.tgz
 
-# Copy dependency files first (for better layer caching)
+# Copy dependency files
 COPY pyproject.toml README.md /app/
 COPY --from=wheels /wheels /wheels
 
-# Install base Python dependencies (without the package itself)
-# This layer will be cached unless dependencies change
+# Install production Python dependencies only (NO test dependencies, NO playwright, NO browsers)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
  && pip install --no-cache-dir semgrep \
  && pip install --no-cache-dir /wheels/* \
- && (pip install --no-cache-dir 'mcp>=1.0.0' || true) \
- && pip install --no-cache-dir pytest pytest-playwright requests
+ && (pip install --no-cache-dir 'mcp>=1.0.0' || true)
 
-# Install Playwright browsers (required for UI tests)
-# This is separate so browser installs are cached
-RUN playwright install chromium \
- && playwright install-deps chromium
-
-# Copy source code (needed for editable install)
-# This layer rebuilds when code changes, but dependencies above are cached
+# Copy source code only (NO tests directory)
 COPY src/ /app/src/
-# Copy tests (for running tests in container)
-COPY tests/ /app/tests/
 
-# Install the package in editable mode (fast since dependencies are already installed)
+# Install the package
 RUN pip install --no-cache-dir -e .
 
 # Create runtime dirs
-RUN mkdir -p /data /reports /sboms /cache
+RUN mkdir -p /app/logs /app/telemetry /data /reports /sboms /cache
+
+# Create non-root user
+RUN useradd -m -u 1000 sentrascan && \
+    chown -R sentrascan:sentrascan /app /data /reports /sboms /cache
+
+# Environment variables
 ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+ENV LOG_DIR=/app/logs
+ENV TELEMETRY_DIR=/app/telemetry
 
 # Expose API
 EXPOSE 8200
+
+# Switch to non-root user
+USER sentrascan
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8200/api/v1/health')"
+
+# Entrypoint
 CMD ["sentrascan", "server", "--host", "0.0.0.0", "--port", "8200"]
+

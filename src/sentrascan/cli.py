@@ -64,6 +64,9 @@ def mcp(configs, auto_discover, baseline, policy, timeout):
 @click.option("--host", default="0.0.0.0")
 @click.option("--port", default=8200, type=int)
 def server(host, port):
+    # Check container access before starting server
+    from sentrascan.core.container_protection import check_container_access
+    check_container_access()
     run_server(host, port)
 
 @main.group()
