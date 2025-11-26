@@ -85,7 +85,7 @@ Based on: `prd-platform-enhancements.md`
 
 ### Notes
 
-- Unit tests should be placed alongside the code files they are testing (e.g., `core/logging.py` and `tests/test_logging.py`)
+- Unit tests should be written alongside implementation (not as separate tasks in section 6.0)
 - Use `pytest` to run tests: `pytest tests/` or `pytest tests/test_specific_file.py`
 - Integration tests require a test database (PostgreSQL or SQLite)
 - Performance tests should be run in a separate environment with production-like data
@@ -129,28 +129,8 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 1.16 Ensure all findings display severity, category, scanner name, and remediation guidance
   - [ ] 1.17 Add enhanced data tables with pagination for findings display
   - [ ] 1.18 Update `APIKey` model in `models.py` to support custom names and validation
-  - [ ] 1.19 **DELTA TESTING - Section 1.0**: Create test suite for section 1.0 changes (footer, statistics cards, API keys, findings display)
-  - [ ] 1.20 **DELTA TESTING - Section 1.0**: Test footer copyright update displays correctly on all pages
-  - [ ] 1.21 **DELTA TESTING - Section 1.0**: Test statistics cards layout (4 per row, wrapping, responsive behavior)
-  - [ ] 1.22 **DELTA TESTING - Section 1.0**: Test API key generation format and validation (format, length, hyphen placement)
-  - [ ] 1.23 **DELTA TESTING - Section 1.0**: Test API key creation endpoint with valid/invalid inputs
-  - [ ] 1.24 **DELTA TESTING - Section 1.0**: Test API key UI functionality (create, list, mask/reveal, copy-to-clipboard)
-  - [ ] 1.25 **DELTA TESTING - Section 1.0**: Test findings aggregate view (all scans, filtering, sorting)
-  - [ ] 1.26 **DELTA TESTING - Section 1.0**: Test findings per-scan detail view (navigation, display of all fields)
-  - [ ] 1.27 **DELTA TESTING - Section 1.0**: Test findings pagination and data table functionality
-  - [ ] 1.28 **REGRESSION TESTING - Section 1.0**: Run existing test suite to verify no breaking changes
-  - [ ] 1.29 **REGRESSION TESTING - Section 1.0**: Test existing scan creation and execution still works
-  - [ ] 1.30 **REGRESSION TESTING - Section 1.0**: Test existing scan detail page still displays correctly
-  - [ ] 1.31 **REGRESSION TESTING - Section 1.0**: Test existing dashboard functionality (statistics calculation, display)
-  - [ ] 1.32 **REGRESSION TESTING - Section 1.0**: Test existing API key authentication still works
-  - [ ] 1.33 **REGRESSION TESTING - Section 1.0**: Test existing baseline functionality still works
-  - [ ] 1.34 **REGRESSION TESTING - Section 1.0**: Test existing SBOM functionality still works
-  - [ ] 1.35 **REGRESSION TESTING - Section 1.0**: Verify all existing API endpoints return expected responses
-  - [ ] 1.36 **REGRESSION TESTING - Section 1.0**: Test existing database queries and models still function correctly
-  - [ ] 1.37 **REGRESSION TESTING - Section 1.0**: Verify UI accessibility (WCAG 2.1 AA) is maintained
-  - [ ] 1.38 **REGRESSION TESTING - Section 1.0**: Test cross-browser compatibility (Chrome, Firefox, Safari, Edge)
-  - [ ] 1.39 **REGRESSION TESTING - Section 1.0**: Document any breaking changes or migration requirements
-  - [ ] 1.40 **REGRESSION TESTING - Section 1.0**: Create test report for section 1.0 delta and regression tests
+  - [ ] 1.19 **DELTA TESTING - Section 1.0**: Test footer copyright, statistics cards layout, API key generation/UI, findings display (aggregate and detail views)
+  - [ ] 1.20 **REGRESSION TESTING - Section 1.0**: Run existing test suite and verify scan creation/execution, API endpoints, database queries, baseline/SBOM functionality still work
 
 - [ ] 2.0 Logging, Telemetry & Container Optimization
   - [ ] 2.1 Create structured logging module (`core/logging.py`) using `structlog` or `python-json-logger`
@@ -180,33 +160,8 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 2.25 Implement container protection for production (build-time access key)
   - [ ] 2.26 Add container access key configuration in `Dockerfile.protected`
   - [ ] 2.27 Document container protection mechanism and access procedures
-  - [ ] 2.28 **DELTA TESTING - Section 2.0**: Create test suite for section 2.0 changes (logging, telemetry, container optimization)
-  - [ ] 2.29 **DELTA TESTING - Section 2.0**: Test structured logging output (JSON format, log levels, stdout/stderr)
-  - [ ] 2.30 **DELTA TESTING - Section 2.0**: Test log file storage and rotation in `/app/logs` directory
-  - [ ] 2.31 **DELTA TESTING - Section 2.0**: Test log archiving (compression after 7 days)
-  - [ ] 2.32 **DELTA TESTING - Section 2.0**: Test logging for authentication events (login, logout, API key validation)
-  - [ ] 2.33 **DELTA TESTING - Section 2.0**: Test logging for scan lifecycle events (start, progress, completion, failure)
-  - [ ] 2.34 **DELTA TESTING - Section 2.0**: Test logging for API requests (endpoint, method, status, duration)
-  - [ ] 2.35 **DELTA TESTING - Section 2.0**: Test data masking in logs (API keys, passwords, PII are masked)
-  - [ ] 2.36 **DELTA TESTING - Section 2.0**: Test OTEL-compliant telemetry (local storage, structured format)
-  - [ ] 2.37 **DELTA TESTING - Section 2.0**: Test ZAP removal (verify ZAP is not installed, code is optional/disabled)
-  - [ ] 2.38 **DELTA TESTING - Section 2.0**: Test production Dockerfile excludes test files and dependencies
-  - [ ] 2.39 **DELTA TESTING - Section 2.0**: Test container size reduction (measure before/after sizes)
-  - [ ] 2.40 **DELTA TESTING - Section 2.0**: Test container protection mechanism (access key requirement)
-  - [ ] 2.41 **DELTA TESTING - Section 2.0**: Test container builds successfully without ZAP and test dependencies
-  - [ ] 2.42 **REGRESSION TESTING - Section 2.0**: Run existing test suite to verify no breaking changes
-  - [ ] 2.43 **REGRESSION TESTING - Section 2.0**: Test existing scan execution still works (MCP and Model scans)
-  - [ ] 2.44 **REGRESSION TESTING - Section 2.0**: Test existing API endpoints still function correctly
-  - [ ] 2.45 **REGRESSION TESTING - Section 2.0**: Test existing database operations still work
-  - [ ] 2.46 **REGRESSION TESTING - Section 2.0**: Test existing UI functionality still works
-  - [ ] 2.47 **REGRESSION TESTING - Section 2.0**: Test existing authentication and authorization still works
-  - [ ] 2.48 **REGRESSION TESTING - Section 2.0**: Verify container can start and run application successfully
-  - [ ] 2.49 **REGRESSION TESTING - Section 2.0**: Test existing findings display and aggregation still works
-  - [ ] 2.50 **REGRESSION TESTING - Section 2.0**: Test existing baseline and SBOM functionality still works
-  - [ ] 2.51 **REGRESSION TESTING - Section 2.0**: Verify all existing features from section 1.0 still work
-  - [ ] 2.52 **REGRESSION TESTING - Section 2.0**: Test performance is not degraded (response times, scan execution times)
-  - [ ] 2.53 **REGRESSION TESTING - Section 2.0**: Document any breaking changes or migration requirements
-  - [ ] 2.54 **REGRESSION TESTING - Section 2.0**: Create test report for section 2.0 delta and regression tests
+  - [ ] 2.28 **DELTA TESTING - Section 2.0**: Test structured logging (JSON format, log levels, file storage, rotation, archiving, data masking), OTEL telemetry, ZAP removal, container optimization (size reduction, protection)
+  - [ ] 2.29 **REGRESSION TESTING - Section 2.0**: Run existing test suite and verify scan execution (MCP/Model), API endpoints, database operations, UI functionality, authentication, container startup, and all section 1.0 features still work
 
 - [ ] 3.0 Multi-Tenancy & User Management
   - [ ] 3.1 Create `Tenant` model in `models.py` (id, name, created_at, is_active, settings)
@@ -244,40 +199,8 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 3.33 Add role assignment interface in user management UI
   - [ ] 3.34 Update all UI queries to scope data to current tenant
   - [ ] 3.35 Display current tenant name in navigation
-  - [ ] 3.36 **DELTA TESTING - Section 3.0**: Create test suite for section 3.0 changes (multi-tenancy, user management, RBAC)
-  - [ ] 3.37 **DELTA TESTING - Section 3.0**: Test Tenant model creation and database schema updates
-  - [ ] 3.38 **DELTA TESTING - Section 3.0**: Test User model creation with password hashing and MFA fields
-  - [ ] 3.39 **DELTA TESTING - Section 3.0**: Test TenantSettings and AuditLog models
-  - [ ] 3.40 **DELTA TESTING - Section 3.0**: Test tenant_id columns added to all relevant tables (scans, findings, api_keys, baselines, sboms)
-  - [ ] 3.41 **DELTA TESTING - Section 3.0**: Test tenant context middleware extracts tenant from user/API key correctly
-  - [ ] 3.42 **DELTA TESTING - Section 3.0**: Test all database queries include tenant filter
-  - [ ] 3.43 **DELTA TESTING - Section 3.0**: Test user registration endpoint with valid/invalid inputs
-  - [ ] 3.44 **DELTA TESTING - Section 3.0**: Test user login endpoint (email/password, account lockout)
-  - [ ] 3.45 **DELTA TESTING - Section 3.0**: Test password hashing and secure password policies
-  - [ ] 3.46 **DELTA TESTING - Section 3.0**: Test user management endpoints (create, update, deactivate)
-  - [ ] 3.47 **DELTA TESTING - Section 3.0**: Test tenant management endpoints (create, update, list) for super admins
-  - [ ] 3.48 **DELTA TESTING - Section 3.0**: Test RBAC role checking decorators (Super Admin, Tenant Admin, Viewer, Scanner)
-  - [ ] 3.49 **DELTA TESTING - Section 3.0**: Test API key authentication associates keys with users and tenants
-  - [ ] 3.50 **DELTA TESTING - Section 3.0**: Test session management (48-hour timeout, secure cookies, session refresh)
-  - [ ] 3.51 **DELTA TESTING - Section 3.0**: Test tenant selector/switcher UI component
-  - [ ] 3.52 **DELTA TESTING - Section 3.0**: Test tenant and user management UI pages
-  - [ ] 3.53 **DELTA TESTING - Section 3.0**: Test tenant isolation (users can only access their tenant's data)
-  - [ ] 3.54 **DELTA TESTING - Section 3.0**: Test cross-tenant data access prevention
-  - [ ] 3.55 **REGRESSION TESTING - Section 3.0**: Run existing test suite to verify no breaking changes
-  - [ ] 3.56 **REGRESSION TESTING - Section 3.0**: Test existing scan creation and execution still works (with tenant context)
-  - [ ] 3.57 **REGRESSION TESTING - Section 3.0**: Test existing findings display still works (tenant-scoped)
-  - [ ] 3.58 **REGRESSION TESTING - Section 3.0**: Test existing API key authentication still works (with tenant association)
-  - [ ] 3.59 **REGRESSION TESTING - Section 3.0**: Test existing baseline functionality still works (tenant-scoped)
-  - [ ] 3.60 **REGRESSION TESTING - Section 3.0**: Test existing SBOM functionality still works (tenant-scoped)
-  - [ ] 3.61 **REGRESSION TESTING - Section 3.0**: Test existing dashboard statistics still calculate correctly (tenant-scoped)
-  - [ ] 3.62 **REGRESSION TESTING - Section 3.0**: Test existing API endpoints still return expected responses (with tenant filtering)
-  - [ ] 3.63 **REGRESSION TESTING - Section 3.0**: Verify all existing features from sections 1.0 and 2.0 still work
-  - [ ] 3.64 **REGRESSION TESTING - Section 3.0**: Test database migration from single-tenant to multi-tenant (if applicable)
-  - [ ] 3.65 **REGRESSION TESTING - Section 3.0**: Test existing logging and telemetry still work (with tenant context)
-  - [ ] 3.66 **REGRESSION TESTING - Section 3.0**: Test performance is not degraded (tenant filtering, query performance)
-  - [ ] 3.67 **REGRESSION TESTING - Section 3.0**: Verify UI accessibility (WCAG 2.1 AA) is maintained
-  - [ ] 3.68 **REGRESSION TESTING - Section 3.0**: Document any breaking changes or migration requirements
-  - [ ] 3.69 **REGRESSION TESTING - Section 3.0**: Create test report for section 3.0 delta and regression tests
+  - [ ] 3.36 **DELTA TESTING - Section 3.0**: Test multi-tenancy models (Tenant, User, TenantSettings, AuditLog), tenant_id columns, tenant context middleware, user authentication (registration, login, logout, password policies), RBAC (role checking), session management, tenant/user management UI, tenant isolation and cross-tenant access prevention
+  - [ ] 3.37 **REGRESSION TESTING - Section 3.0**: Run existing test suite and verify scan creation/execution (with tenant context), findings display (tenant-scoped), API key authentication (with tenant association), baseline/SBOM functionality (tenant-scoped), dashboard statistics (tenant-scoped), API endpoints (with tenant filtering), database migration (if applicable), logging/telemetry (with tenant context), and all sections 1.0-2.0 features still work
 
 - [ ] 4.0 Security & Data Protection
   - [ ] 4.1 Create database sharding module (`core/sharding.py`) with schema-based or table-based strategy
@@ -312,44 +235,8 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 4.30 Implement dependency vulnerability scanning in CI/CD
   - [ ] 4.31 Add container image scanning (vulnerability scanning)
   - [ ] 4.32 Implement secrets management (use secrets manager, never in code/env vars)
-  - [ ] 4.33 **DELTA TESTING - Section 4.0**: Create test suite for section 4.0 changes (sharding, encryption, security)
-  - [ ] 4.34 **DELTA TESTING - Section 4.0**: Test database sharding module (shard routing, connection pooling)
-  - [ ] 4.35 **DELTA TESTING - Section 4.0**: Test shard routing based on tenant_id (correct shard selection)
-  - [ ] 4.36 **DELTA TESTING - Section 4.0**: Test shard management API (adding/removing shards)
-  - [ ] 4.37 **DELTA TESTING - Section 4.0**: Test encryption module (AES-256 encryption/decryption)
-  - [ ] 4.38 **DELTA TESTING - Section 4.0**: Test key management module (tenant-specific keys, key rotation)
-  - [ ] 4.39 **DELTA TESTING - Section 4.0**: Test transparent encryption/decryption for database operations
-  - [ ] 4.40 **DELTA TESTING - Section 4.0**: Test encrypted database backups
-  - [ ] 4.41 **DELTA TESTING - Section 4.0**: Test MFA setup and verification endpoints (TOTP)
-  - [ ] 4.42 **DELTA TESTING - Section 4.0**: Test password expiration and rotation policies
-  - [ ] 4.43 **DELTA TESTING - Section 4.0**: Test secure session management (HTTP-only, secure cookies, SameSite)
-  - [ ] 4.44 **DELTA TESTING - Section 4.0**: Test rate limiting (per API key, per IP, per tenant)
-  - [ ] 4.45 **DELTA TESTING - Section 4.0**: Test API key rotation and expiration policies
-  - [ ] 4.46 **DELTA TESTING - Section 4.0**: Test input validation and sanitization (SQL injection, XSS prevention)
-  - [ ] 4.47 **DELTA TESTING - Section 4.0**: Test output encoding (XSS prevention)
-  - [ ] 4.48 **DELTA TESTING - Section 4.0**: Test CORS configuration (restricted origins)
-  - [ ] 4.49 **DELTA TESTING - Section 4.0**: Test security headers (HSTS, X-Frame-Options, X-Content-Type-Options, CSP)
-  - [ ] 4.50 **DELTA TESTING - Section 4.0**: Test CSRF protection (CSRF tokens, SameSite cookies)
-  - [ ] 4.51 **DELTA TESTING - Section 4.0**: Test comprehensive audit logging for security events
-  - [ ] 4.52 **DELTA TESTING - Section 4.0**: Test dependency vulnerability scanning
-  - [ ] 4.53 **DELTA TESTING - Section 4.0**: Test container image security scanning
-  - [ ] 4.54 **DELTA TESTING - Section 4.0**: Test secrets management (no secrets in code/env vars)
-  - [ ] 4.55 **REGRESSION TESTING - Section 4.0**: Run existing test suite to verify no breaking changes
-  - [ ] 4.56 **REGRESSION TESTING - Section 4.0**: Test existing scan creation and execution still works (with encryption)
-  - [ ] 4.57 **REGRESSION TESTING - Section 4.0**: Test existing findings storage and retrieval still works (encrypted at rest)
-  - [ ] 4.58 **REGRESSION TESTING - Section 4.0**: Test existing API endpoints still function correctly (with security controls)
-  - [ ] 4.59 **REGRESSION TESTING - Section 4.0**: Test existing user authentication still works (with MFA support)
-  - [ ] 4.60 **REGRESSION TESTING - Section 4.0**: Test existing tenant isolation still works (with sharding)
-  - [ ] 4.61 **REGRESSION TESTING - Section 4.0**: Test existing RBAC still works (with enhanced security)
-  - [ ] 4.62 **REGRESSION TESTING - Section 4.0**: Test existing logging and telemetry still work (with audit logging)
-  - [ ] 4.63 **REGRESSION TESTING - Section 4.0**: Verify all existing features from sections 1.0, 2.0, and 3.0 still work
-  - [ ] 4.64 **REGRESSION TESTING - Section 4.0**: Test database queries still perform correctly (with sharding and encryption)
-  - [ ] 4.65 **REGRESSION TESTING - Section 4.0**: Test UI functionality still works (with security headers and CSRF protection)
-  - [ ] 4.66 **REGRESSION TESTING - Section 4.0**: Test performance is acceptable (encryption/decryption overhead, shard routing)
-  - [ ] 4.67 **REGRESSION TESTING - Section 4.0**: Verify UI accessibility (WCAG 2.1 AA) is maintained
-  - [ ] 4.68 **REGRESSION TESTING - Section 4.0**: Test key rotation does not cause data loss or downtime
-  - [ ] 4.69 **REGRESSION TESTING - Section 4.0**: Document any breaking changes or migration requirements
-  - [ ] 4.70 **REGRESSION TESTING - Section 4.0**: Create test report for section 4.0 delta and regression tests
+  - [ ] 4.33 **DELTA TESTING - Section 4.0**: Test database sharding (routing, connection pooling, management API), encryption at rest (AES-256, key management, transparent encryption/decryption, key rotation, encrypted backups), MFA (TOTP setup/verification), security controls (rate limiting, input validation, output encoding, CORS, security headers, CSRF protection, audit logging), vulnerability scanning, secrets management
+  - [ ] 4.34 **REGRESSION TESTING - Section 4.0**: Run existing test suite and verify scan creation/execution (with encryption), findings storage/retrieval (encrypted at rest), API endpoints (with security controls), user authentication (with MFA support), tenant isolation (with sharding), RBAC (with enhanced security), logging/telemetry (with audit logging), database queries (with sharding and encryption), UI functionality (with security headers and CSRF), key rotation (no data loss/downtime), and all sections 1.0-3.0 features still work
 
 - [ ] 5.0 Analytics, ML & Advanced Features
   - [ ] 5.1 Create tenant settings service (`core/tenant_settings.py`) for managing tenant configurations
@@ -396,156 +283,41 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 5.42 Add "How To" link to main navigation in `base.html`
   - [ ] 5.43 Ensure documentation is accessible (WCAG 2.1 AA compliant)
   - [ ] 5.44 Add print-friendly CSS for documentation
-  - [ ] 5.45 **DELTA TESTING - Section 5.0**: Create test suite for section 5.0 changes (tenant settings, analytics, ML, documentation)
-  - [ ] 5.46 **DELTA TESTING - Section 5.0**: Test tenant settings service (create, update, validation)
-  - [ ] 5.47 **DELTA TESTING - Section 5.0**: Test policy settings (custom rules, gate thresholds, pass/fail criteria)
-  - [ ] 5.48 **DELTA TESTING - Section 5.0**: Test scanner settings (enable/disable, timeouts, configurations)
-  - [ ] 5.49 **DELTA TESTING - Section 5.0**: Test severity settings (custom mappings, thresholds, actions)
-  - [ ] 5.50 **DELTA TESTING - Section 5.0**: Test notification settings (alert thresholds, channels, preferences)
-  - [ ] 5.51 **DELTA TESTING - Section 5.0**: Test scan settings (default parameters, schedules, retention policies)
-  - [ ] 5.52 **DELTA TESTING - Section 5.0**: Test integration settings (webhook URLs, external tool configs)
-  - [ ] 5.53 **DELTA TESTING - Section 5.0**: Test settings validation using JSON schema
-  - [ ] 5.54 **DELTA TESTING - Section 5.0**: Test default settings for new tenants
-  - [ ] 5.55 **DELTA TESTING - Section 5.0**: Test analytics engine (trend analysis, severity distribution, scanner effectiveness)
-  - [ ] 5.56 **DELTA TESTING - Section 5.0**: Test remediation progress tracking and risk scoring
-  - [ ] 5.57 **DELTA TESTING - Section 5.0**: Test time range filtering for analytics (7 days, 30 days, 90 days, custom)
-  - [ ] 5.58 **DELTA TESTING - Section 5.0**: Test analytics are tenant-scoped (only current tenant data)
-  - [ ] 5.59 **DELTA TESTING - Section 5.0**: Test analytics export functionality (CSV, JSON, PDF)
-  - [ ] 5.60 **DELTA TESTING - Section 5.0**: Test analytics dashboard UI (charts, visualizations, interactions)
-  - [ ] 5.61 **DELTA TESTING - Section 5.0**: Test ML insights module (anomaly detection, risk scoring, correlation analysis)
-  - [ ] 5.62 **DELTA TESTING - Section 5.0**: Test ML models do NOT learn from customer data (pre-trained only)
-  - [ ] 5.63 **DELTA TESTING - Section 5.0**: Test ML feature flag (enable/disable functionality)
-  - [ ] 5.64 **DELTA TESTING - Section 5.0**: Test documentation structure and markdown rendering
-  - [ ] 5.65 **DELTA TESTING - Section 5.0**: Test documentation viewer page (navigation, search, syntax highlighting)
-  - [ ] 5.66 **DELTA TESTING - Section 5.0**: Test documentation accessibility (WCAG 2.1 AA compliant)
-  - [ ] 5.67 **DELTA TESTING - Section 5.0**: Test all documentation files are accessible and render correctly
-  - [ ] 5.68 **REGRESSION TESTING - Section 5.0**: Run existing test suite to verify no breaking changes
-  - [ ] 5.69 **REGRESSION TESTING - Section 5.0**: Test existing scan creation and execution still works (with tenant settings)
-  - [ ] 5.70 **REGRESSION TESTING - Section 5.0**: Test existing findings display still works (with analytics integration)
-  - [ ] 5.71 **REGRESSION TESTING - Section 5.0**: Test existing API endpoints still function correctly
-  - [ ] 5.72 **REGRESSION TESTING - Section 5.0**: Test existing user and tenant management still works
-  - [ ] 5.73 **REGRESSION TESTING - Section 5.0**: Test existing RBAC still works
-  - [ ] 5.74 **REGRESSION TESTING - Section 5.0**: Test existing logging and telemetry still work
-  - [ ] 5.75 **REGRESSION TESTING - Section 5.0**: Test existing security controls still work (encryption, sharding, MFA)
-  - [ ] 5.76 **REGRESSION TESTING - Section 5.0**: Verify all existing features from sections 1.0, 2.0, 3.0, and 4.0 still work
-  - [ ] 5.77 **REGRESSION TESTING - Section 5.0**: Test dashboard statistics still calculate correctly (with analytics engine)
-  - [ ] 5.78 **REGRESSION TESTING - Section 5.0**: Test tenant isolation still works (with tenant settings)
-  - [ ] 5.79 **REGRESSION TESTING - Section 5.0**: Test performance is acceptable (analytics calculations, ML insights)
-  - [ ] 5.80 **REGRESSION TESTING - Section 5.0**: Verify UI accessibility (WCAG 2.1 AA) is maintained
-  - [ ] 5.81 **REGRESSION TESTING - Section 5.0**: Test cross-browser compatibility (Chrome, Firefox, Safari, Edge)
-  - [ ] 5.82 **REGRESSION TESTING - Section 5.0**: Document any breaking changes or migration requirements
-  - [ ] 5.83 **REGRESSION TESTING - Section 5.0**: Create test report for section 5.0 delta and regression tests
-  - [ ] 5.84 **FINAL REGRESSION TESTING**: Run complete end-to-end test suite covering all sections (1.0-5.0)
-  - [ ] 5.85 **FINAL REGRESSION TESTING**: Test complete user workflows from login to scan execution to analytics
-  - [ ] 5.86 **FINAL REGRESSION TESTING**: Test multi-tenant scenarios end-to-end (tenant creation, user management, scans, analytics)
-  - [ ] 5.87 **FINAL REGRESSION TESTING**: Verify all PRD requirements are met and documented
-  - [ ] 5.88 **FINAL REGRESSION TESTING**: Create comprehensive test report for all sections
+  - [ ] 5.45 **DELTA TESTING - Section 5.0**: Test tenant settings (all setting types, validation, defaults), analytics engine (trends, distributions, metrics, remediation tracking, risk scoring, time range filtering, tenant-scoping, export), ML insights (anomaly detection, risk scoring, correlation, prioritization, no customer data learning, feature flag), documentation (structure, markdown rendering, navigation, search, accessibility)
+  - [ ] 5.46 **REGRESSION TESTING - Section 5.0**: Run existing test suite and verify scan creation/execution (with tenant settings), findings display (with analytics integration), API endpoints, user/tenant management, RBAC, logging/telemetry, security controls, dashboard statistics (with analytics engine), tenant isolation (with tenant settings), and all sections 1.0-4.0 features still work
+  - [ ] 5.47 **FINAL REGRESSION TESTING**: Run complete end-to-end test suite covering all sections (1.0-5.0), test complete user workflows (login → scan → analytics), test multi-tenant scenarios end-to-end, verify all PRD requirements are met, create comprehensive test report
 
-- [ ] 6.0 Unit Testing
-  - [ ] 6.1 Write unit tests for API key generation function (test format, length, randomness)
-  - [ ] 6.2 Write unit tests for session management (timeout, refresh, cookie signing)
-  - [ ] 6.3 Write unit tests for tenant context extraction from user/API key
-  - [ ] 6.4 Write unit tests for RBAC role checking decorators
-  - [ ] 6.5 Write unit tests for password hashing and validation
-  - [ ] 6.6 Write unit tests for MFA TOTP generation and verification
-  - [ ] 6.7 Write unit tests for encryption/decryption functions
-  - [ ] 6.8 Write unit tests for shard routing logic
-  - [ ] 6.9 Write unit tests for tenant settings validation
-  - [ ] 6.10 Write unit tests for analytics calculations (trends, distributions, metrics)
-  - [ ] 6.11 Write unit tests for ML insights functions (anomaly detection, risk scoring)
-  - [ ] 6.12 Write unit tests for logging functions (log formatting, masking, rotation)
-  - [ ] 6.13 Write unit tests for database models (Tenant, User, TenantSettings, AuditLog)
-  - [ ] 6.14 Write unit tests for API endpoints (all CRUD operations)
-  - [ ] 6.15 Write unit tests for data aggregation functions (findings aggregation)
-  - [ ] 6.16 Achieve minimum 80% code coverage for new code
-  - [ ] 6.17 Achieve 100% coverage for critical security functions
-  - [ ] 6.18 Set up pytest configuration in `conftest.py` with fixtures
-  - [ ] 6.19 Create test fixtures for tenants, users, API keys, scans, findings
+- [ ] 6.0 Unit Testing (Write alongside implementation)
+  - [ ] 6.1 Write unit tests for API key generation, session management, tenant context, RBAC, password hashing, MFA, encryption/decryption, shard routing, tenant settings validation, analytics calculations, ML insights, logging functions, database models, API endpoints, data aggregation
+  - [ ] 6.2 Achieve minimum 80% code coverage for new code, 100% for critical security functions
+  - [ ] 6.3 Set up pytest configuration in `conftest.py` with fixtures for tenants, users, API keys, scans, findings
 
 - [ ] 7.0 Integration Testing
-  - [ ] 7.1 Write integration tests for API endpoints with valid/invalid inputs
-  - [ ] 7.2 Write integration tests for authentication flow (register, login, logout)
-  - [ ] 7.3 Write integration tests for authorization (role-based access control)
-  - [ ] 7.4 Write integration tests for tenant isolation (verify cross-tenant data access prevention)
-  - [ ] 7.5 Write integration tests for error handling and error responses
-  - [ ] 7.6 Write integration tests for rate limiting
-  - [ ] 7.7 Write integration tests for database schema initialization
-  - [ ] 7.8 Write integration tests for shard routing (verify correct shard selection)
-  - [ ] 7.9 Write integration tests for encryption/decryption (verify data is encrypted at rest)
-  - [ ] 7.10 Write integration tests for data isolation between tenants
-  - [ ] 7.11 Write integration tests for transaction handling
-  - [ ] 7.12 Write integration tests for key management system integration (mock or staging)
-  - [ ] 7.13 Write integration tests for logging system integration
-  - [ ] 7.14 Write integration tests for session persistence across requests
-  - [ ] 7.15 Write integration tests for API key creation and usage flow
-  - [ ] 7.16 Write integration tests for user management workflows (create, update, deactivate)
-  - [ ] 7.17 Write integration tests for tenant settings (create, update, validation)
-  - [ ] 7.18 Write integration tests for analytics data aggregation
-  - [ ] 7.19 Write integration tests for scan execution with tenant context
-  - [ ] 7.20 Write integration tests for findings storage and retrieval with tenant isolation
+  - [ ] 7.1 Write integration tests for API endpoints, authentication flow, authorization, tenant isolation, error handling, rate limiting, database schema initialization, shard routing, encryption/decryption, data isolation, transaction handling, key management integration, logging system integration, session persistence, API key workflows, user management workflows, tenant settings, analytics data aggregation, scan execution with tenant context, findings storage/retrieval with tenant isolation
 
 - [ ] 8.0 Performance Testing
   - [ ] 8.1 Set up performance testing environment with production-like data
-  - [ ] 8.2 Write load tests for API endpoints (1000+ concurrent requests)
-  - [ ] 8.3 Write load tests for database queries under load
-  - [ ] 8.4 Write load tests for shard routing performance
-  - [ ] 8.5 Write load tests for encryption/decryption performance impact
-  - [ ] 8.6 Write stress tests for system limits (max tenants, max users, max scans)
-  - [ ] 8.7 Write stress tests for memory usage under stress
-  - [ ] 8.8 Write stress tests for CPU usage under stress
-  - [ ] 8.9 Write stress tests for database connection pooling
-  - [ ] 8.10 Measure and verify API response time <200ms (95th percentile)
-  - [ ] 8.11 Measure and verify database query time <100ms (95th percentile)
-  - [ ] 8.12 Measure and verify page load time <2 seconds
-  - [ ] 8.13 Measure and verify scan execution time within configured timeout
-  - [ ] 8.14 Test analytics dashboard performance with large datasets (10,000+ findings)
-  - [ ] 8.15 Test findings aggregation performance in application layer
-  - [ ] 8.16 Test pagination performance for large result sets
-  - [ ] 8.17 Test caching effectiveness for frequently accessed data
-  - [ ] 8.18 Document performance benchmarks and create performance test reports
+  - [ ] 8.2 Write load tests for API endpoints (1000+ concurrent requests), database queries, shard routing, encryption/decryption performance impact
+  - [ ] 8.3 Write stress tests for system limits (max tenants, users, scans), memory/CPU usage, database connection pooling
+  - [ ] 8.4 Measure and verify API response time <200ms (95th percentile), database query time <100ms (95th percentile), page load time <2 seconds, scan execution time within timeout, analytics dashboard performance (10,000+ findings), findings aggregation performance, pagination performance, caching effectiveness
+  - [ ] 8.5 Document performance benchmarks and create performance test reports
 
 - [ ] 9.0 Security Testing
-  - [ ] 9.1 Write security tests for password policies (min length, complexity, expiration)
-  - [ ] 9.2 Write security tests for MFA implementation (TOTP generation, verification)
-  - [ ] 9.3 Write security tests for session management (timeout, secure cookies, SameSite)
-  - [ ] 9.4 Write security tests for role-based access control (verify unauthorized access is prevented)
-  - [ ] 9.5 Write security tests for API key validation (invalid keys, revoked keys)
-  - [ ] 9.6 Write security tests for SQL injection prevention (test with malicious inputs)
-  - [ ] 9.7 Write security tests for XSS prevention (test with script injection attempts)
-  - [ ] 9.8 Write security tests for CSRF protection (test CSRF token validation)
-  - [ ] 9.9 Write security tests for input validation (test with invalid, malformed inputs)
-  - [ ] 9.10 Write security tests for output encoding (verify XSS prevention)
-  - [ ] 9.11 Write security tests for encryption at rest (verify data is encrypted)
-  - [ ] 9.12 Write security tests for encryption in transit (verify TLS 1.3)
-  - [ ] 9.13 Write security tests for data masking in logs (verify sensitive data is masked)
-  - [ ] 9.14 Write security tests for secure data deletion (crypto-shredding)
-  - [ ] 9.15 Write security tests for tenant isolation (verify cross-tenant access prevention)
-  - [ ] 9.16 Write security tests for rate limiting (verify limits are enforced)
-  - [ ] 9.17 Write security tests for secrets management (verify secrets not in code/logs)
-  - [ ] 9.18 Perform dependency vulnerability scanning
-  - [ ] 9.19 Perform container image security scanning
-  - [ ] 9.20 Perform manual security audit of authentication and authorization flows
-  - [ ] 9.21 Document security test results and create security test reports
+  - [ ] 9.1 Write security tests for password policies, MFA implementation, session management, RBAC, API key validation, SQL injection prevention, XSS prevention, CSRF protection, input validation, output encoding, encryption at rest/in transit, data masking in logs, secure data deletion, tenant isolation, rate limiting, secrets management
+  - [ ] 9.2 Perform dependency vulnerability scanning, container image security scanning, manual security audit of authentication and authorization flows
+  - [ ] 9.3 Document security test results and create security test reports
 
 - [ ] 10.0 Acceptance Testing
   - [ ] 10.1 Create acceptance test plan based on user stories from PRD
-  - [ ] 10.2 Write acceptance tests for user story: "As a security analyst, I want to see all scan findings aggregated"
-  - [ ] 10.3 Write acceptance tests for user story: "As a platform administrator, I want comprehensive logging"
-  - [ ] 10.4 Write acceptance tests for user story: "As a DevOps engineer, I want smaller container images"
-  - [ ] 10.5 Write acceptance tests for user story: "As a developer, I want API keys with meaningful names"
-  - [ ] 10.6 Write acceptance tests for user story: "As a user, I want a modern, professional UI"
-  - [ ] 10.7 Write acceptance tests for user story: "As an organization administrator, I want to manage multiple tenants"
-  - [ ] 10.8 Write acceptance tests for user story: "As a platform administrator, I want to manage users and assign roles"
-  - [ ] 10.9 Write acceptance tests for user story: "As a security analyst, I want advanced analytics dashboards"
-  - [ ] 10.10 Write acceptance tests for user story: "As a tenant user, I want to see only my organization's data"
-  - [ ] 10.11 Write acceptance tests for user story: "As a tenant administrator, I want to configure tenant-specific settings"
-  - [ ] 10.12 Write acceptance tests for user story: "As a security officer, I want assurance that data is encrypted at rest"
-  - [ ] 10.13 Write acceptance tests for user story: "As a new user, I want comprehensive documentation"
-  - [ ] 10.14 Write end-to-end acceptance tests for complete user workflows
-  - [ ] 10.15 Write acceptance tests for multi-tenant scenarios (tenant isolation, cross-tenant prevention)
-  - [ ] 10.16 Write acceptance tests for analytics dashboards (trends, charts, exports)
-  - [ ] 10.17 Write acceptance tests for ML insights (anomaly detection, risk scoring)
-  - [ ] 10.18 Write acceptance tests for documentation viewer (navigation, search, rendering)
-  - [ ] 10.19 Validate all success metrics from PRD are met
-  - [ ] 10.20 Perform user acceptance testing with stakeholders
-  - [ ] 10.21 Document acceptance test results and create acceptance test reports
+  - [ ] 10.2 Write acceptance tests for all user stories from PRD (findings aggregation, logging, container optimization, API keys, modern UI, multi-tenancy, user management, analytics, tenant isolation, tenant settings, encryption, documentation)
+  - [ ] 10.3 Write end-to-end acceptance tests for complete user workflows and multi-tenant scenarios
+  - [ ] 10.4 Validate all success metrics from PRD are met
+  - [ ] 10.5 Perform user acceptance testing with stakeholders
+  - [ ] 10.6 Document acceptance test results and create acceptance test reports
+
+- [ ] 11.0 Cross-Cutting Quality Assurance
+  - [ ] 11.1 Verify UI accessibility (WCAG 2.1 AA) across all pages and features
+  - [ ] 11.2 Test cross-browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions)
+  - [ ] 11.3 Test performance is acceptable across all features (no degradation from baseline)
+  - [ ] 11.4 Document any breaking changes or migration requirements
+  - [ ] 11.5 Create comprehensive test report covering all sections and test types
