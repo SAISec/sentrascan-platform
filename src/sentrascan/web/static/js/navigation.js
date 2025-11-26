@@ -101,14 +101,19 @@
     // Store the previously focused element
     previousActiveElement = document.activeElement;
 
-    // Show drawer and overlay
+    // Show drawer and overlay first
     mobileDrawer.style.display = 'block';
     mobileOverlay.style.display = 'block';
     
-    // Trigger animation
+    // Force reflow to ensure display change is applied
+    void mobileDrawer.offsetHeight;
+    
+    // Trigger animation after display is set
     requestAnimationFrame(() => {
-      mobileDrawer.classList.add('open');
-      mobileOverlay.classList.add('show');
+      requestAnimationFrame(() => {
+        mobileDrawer.classList.add('open');
+        mobileOverlay.classList.add('show');
+      });
     });
 
     // Update ARIA attributes
@@ -125,12 +130,11 @@
       document.addEventListener('keydown', focusTrapHandler);
     }
 
-    // Focus on close button for accessibility
+    // Focus on close button for accessibility (wait for animation)
     if (mobileClose) {
-      // Small delay to ensure drawer is visible
       setTimeout(() => {
         mobileClose.focus();
-      }, 100);
+      }, 350); // Wait for animation to complete
     }
   }
 

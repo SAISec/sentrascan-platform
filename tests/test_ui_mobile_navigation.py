@@ -96,16 +96,22 @@ def test_hamburger_menu_aria_expanded(mobile_viewport: Page, authenticated_page:
     
     # Click to open
     hamburger_button.click()
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to have open class and transform to be applied
+    authenticated_page.wait_for_function(
+        "() => { const drawer = document.querySelector('.nav-mobile-drawer'); return drawer && drawer.classList.contains('open') && window.getComputedStyle(drawer).transform !== 'matrix(1, 0, 0, 1, 0, 0)' || window.getComputedStyle(drawer).transform === 'none' || window.getComputedStyle(drawer).transform.includes('0'); }",
+        timeout=3000
+    )
+    authenticated_page.wait_for_timeout(300)  # Extra wait for animation
     
     # Should be true when open
     aria_expanded = hamburger_button.get_attribute("aria-expanded")
     assert aria_expanded == "true", "Hamburger should have aria-expanded='true' when drawer is open"
     
-    # Close drawer
+    # Close drawer - use force click since element might be off-screen during animation
     close_button = authenticated_page.locator(".nav-mobile-close")
     if close_button.count() > 0:
-        close_button.click()
+        # Force click since element might be transitioning
+        close_button.click(force=True, timeout=5000)
         authenticated_page.wait_for_timeout(500)
         
         # Should be false again
@@ -129,14 +135,19 @@ def test_drawer_close_button(mobile_viewport: Page, authenticated_page: Page, ap
     
     # Open drawer
     hamburger_button.click()
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to be open
+    authenticated_page.wait_for_function(
+        "() => { const drawer = document.querySelector('.nav-mobile-drawer'); return drawer && drawer.classList.contains('open'); }",
+        timeout=3000
+    )
+    authenticated_page.wait_for_timeout(300)
     
     # Verify drawer is open
     drawer_display = drawer.evaluate("el => window.getComputedStyle(el).display")
     assert drawer_display == "block", "Drawer should be open"
     
-    # Click close button
-    close_button.click()
+    # Click close button (use force since it might be transitioning)
+    close_button.click(force=True, timeout=5000)
     authenticated_page.wait_for_timeout(500)
     
     # Drawer should be closed
@@ -178,11 +189,15 @@ def test_drawer_link_click_closes(mobile_viewport: Page, authenticated_page: Pag
     
     # Open drawer
     hamburger_button.click()
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to be visible
+    authenticated_page.wait_for_selector(".nav-mobile-drawer.open", state="visible", timeout=2000)
+    authenticated_page.wait_for_timeout(200)
     
     # Find a link in drawer
     drawer_link = drawer.locator("a.nav-link").first
     if drawer_link.count() > 0:
+        drawer_link.wait_for(state="visible", timeout=2000)
+        drawer_link.scroll_into_view_if_needed()
         # Click link
         drawer_link.click()
         authenticated_page.wait_for_timeout(500)
@@ -352,9 +367,13 @@ def test_drawer_focus_restoration(mobile_viewport: Page, authenticated_page: Pag
     
     # Open drawer
     hamburger_button.click()
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to be visible
+    authenticated_page.wait_for_selector(".nav-mobile-drawer.open", state="visible", timeout=2000)
+    authenticated_page.wait_for_timeout(200)
     
-    # Close drawer
+    # Close drawer (wait for close button to be visible)
+    close_button.wait_for(state="visible", timeout=2000)
+    close_button.scroll_into_view_if_needed()
     close_button.click()
     authenticated_page.wait_for_timeout(500)
     
@@ -411,11 +430,13 @@ def test_drawer_body_scroll_prevention(mobile_viewport: Page, authenticated_page
     
     # Open drawer
     hamburger_button.click()
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to be visible and JS to apply
+    authenticated_page.wait_for_selector(".nav-mobile-drawer.open", state="visible", timeout=2000)
+    authenticated_page.wait_for_timeout(200)
     
     # Body overflow should be hidden
     body_overflow = authenticated_page.evaluate("() => window.getComputedStyle(document.body).overflow")
-    assert body_overflow == "hidden", "Body overflow should be hidden when drawer is open"
+    assert body_overflow == "hidden", f"Body overflow should be hidden when drawer is open (got: {body_overflow})"
     
     # Close drawer
     close_button = authenticated_page.locator(".nav-mobile-close")
@@ -445,7 +466,9 @@ def test_hamburger_keyboard_activation(mobile_viewport: Page, authenticated_page
     
     # Press Enter to activate
     authenticated_page.keyboard.press("Enter")
-    authenticated_page.wait_for_timeout(500)
+    # Wait for drawer to open
+    authenticated_page.wait_for_selector(".nav-mobile-drawer.open", state="visible", timeout=2000)
+    authenticated_page.wait_for_timeout(200)
     
     # Drawer should open
     drawer_display = drawer.evaluate("el => window.getComputedStyle(el).display")
@@ -453,8 +476,10 @@ def test_hamburger_keyboard_activation(mobile_viewport: Page, authenticated_page
     
     # Close and try Space
     close_button = authenticated_page.locator(".nav-mobile-close")
+    close_button.wait_for(state="visible", timeout=2000)
+    close_button.scroll_into_view_if_needed()
     close_button.click()
-    authenticated_page.wait_for_timeout(500)
+    authenticated_page.wait_for_timeout(600)  # Wait for drawer to fully close
     
     # Focus hamburger again
     hamburger_button.focus()

@@ -59,7 +59,7 @@
           <p id="api_key_help" class="form-help-text">
             Enter your API key to authenticate
           </p>
-          <div id="api_key_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% endif %}">
+          <div id="api_key_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% else %}display: block; color: var(--color-error, #F44336); font-size: var(--font-size-sm, 14px); margin-top: var(--spacing-xs, 4px);{% endif %}">
             {% if error %}{{ error }}{% endif %}
           </div>
         </div>
@@ -140,7 +140,11 @@
     apiKeyError.style.display = 'block';
     apiKeyInput.classList.add('error');
     apiKeyInput.setAttribute('aria-invalid', 'true');
-    apiKeyInput.setAttribute('aria-describedby', 'api_key_help api_key_error');
+    // Ensure error ID is in aria-describedby
+    const currentDescribedBy = apiKeyInput.getAttribute('aria-describedby') || '';
+    if (!currentDescribedBy.includes('api_key_error')) {
+      apiKeyInput.setAttribute('aria-describedby', (currentDescribedBy + ' api_key_error').trim());
+    }
     
     // Focus on input to announce error to screen readers
     apiKeyInput.focus();

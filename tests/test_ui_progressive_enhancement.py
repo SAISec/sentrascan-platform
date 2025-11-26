@@ -454,7 +454,7 @@ def test_core_functionality_works_without_js(page: Page, api_base):
     page.goto(f"{api_base}/login", wait_until="networkidle")
     
     # Form should be submittable
-    form = page.locator("form")
+    form = page.locator("form.login-form, form[action='/login']").first
     assert form.count() > 0, "Login form should exist"
     
     form_action = form.get_attribute("action")
