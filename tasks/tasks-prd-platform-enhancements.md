@@ -116,10 +116,10 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 1.3 Reduce statistics card size (padding, font sizes) in `components.css`
   - [ ] 1.4 Ensure statistics cards wrap to second row if more than 4 cards exist
   - [ ] 1.5 Add responsive breakpoints for mobile (stack cards vertically on small screens)
-  - [ ] 1.6 Implement API key generation with format `ss-proj-h_` + 147-character alphanumeric string with one hyphen
-  - [ ] 1.7 Add API key generation function in `server.py` using `secrets.token_urlsafe()`
+  - [ ] 1.6 Create API key generation function in `server.py` that generates format: `ss-proj-h_` + 147-character alphanumeric string (A-Z, a-z, 0-9) with exactly one random hyphen inserted at random position
+  - [ ] 1.7 Add API key validation function to ensure format matches `ss-proj-h_` prefix and 147-character alphanumeric string with one hyphen
   - [ ] 1.8 Create API key management UI page (`api_keys.html`) with creation form and list view
-  - [ ] 1.9 Add API key creation endpoint (`POST /api/v1/api-keys`) with optional name field
+  - [ ] 1.9 Add API key creation endpoint (`POST /api/v1/api-keys`) in `server.py` that accepts optional `name` field (String) and returns generated API key (plaintext) and key metadata (id, name, created_at)
   - [ ] 1.10 Implement API key display with masked/reveal functionality in UI
   - [ ] 1.11 Add copy-to-clipboard functionality for API keys in `api_keys.js`
   - [ ] 1.12 Enhance findings display with aggregate view (all scans) in `findings_aggregate.html`
@@ -128,24 +128,24 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 1.15 Add navigation between aggregate and per-scan views
   - [ ] 1.16 Ensure all findings display severity, category, scanner name, and remediation guidance
   - [ ] 1.17 Add enhanced data tables with pagination for findings display
-  - [ ] 1.18 Update `APIKey` model in `models.py` to support custom names and validation
+  - [ ] 1.18 Update `APIKey` model in `models.py` to add `name` field (String, nullable) and add validation method to check API key format matches requirement
   - [ ] 1.19 **DELTA TESTING - Section 1.0**: Test footer copyright, statistics cards layout, API key generation/UI, findings display (aggregate and detail views)
   - [ ] 1.20 **REGRESSION TESTING - Section 1.0**: Run existing test suite and verify scan creation/execution, API endpoints, database queries, baseline/SBOM functionality still work
 
 - [ ] 2.0 Logging, Telemetry & Container Optimization
-  - [ ] 2.1 Create structured logging module (`core/logging.py`) using `structlog` or `python-json-logger`
+  - [ ] 2.1 Create structured logging module (`core/logging.py`) using `structlog` library (preferred) with JSON output formatter
   - [ ] 2.2 Implement JSON-formatted logging to stdout/stderr
   - [ ] 2.3 Configure log levels via environment variable (`LOG_LEVEL`)
   - [ ] 2.4 Implement log file storage in `/app/logs` directory
-  - [ ] 2.5 Add log rotation and size limits
+  - [ ] 2.5 Add log rotation using `RotatingFileHandler` with max file size 10MB and backup count of 5 files per log level
   - [ ] 2.6 Implement log archiving (compress logs after 7 days)
   - [ ] 2.7 Add logging for authentication events (login, logout, API key validation)
   - [ ] 2.8 Add logging for scan lifecycle (start, progress, completion, failure)
   - [ ] 2.9 Add logging for API requests (endpoint, method, status code, duration)
   - [ ] 2.10 Add logging for database operations (queries, errors)
   - [ ] 2.11 Add logging for system events (startup, shutdown, health checks)
-  - [ ] 2.12 Implement data masking in logs (mask API keys, passwords, PII)
-  - [ ] 2.13 Implement OTEL-compliant telemetry (`TELEMETRY_ENABLED`, `OTEL_EXPORTER_TYPE`)
+  - [ ] 2.12 Implement data masking in logs: mask API keys (show only first 4 chars + `***`), passwords (always `***`), email addresses (show only domain), IP addresses (last octet masked), and any fields marked as sensitive
+  - [ ] 2.13 Implement OTEL-compliant telemetry using `opentelemetry` library with local file exporter (store in `/app/logs/telemetry/` as JSON files, support `TELEMETRY_ENABLED` env var to enable/disable)
   - [ ] 2.14 Store telemetry data locally in structured format alongside logs
   - [ ] 2.15 Remove ZAP installation steps from `Dockerfile`
   - [ ] 2.16 Remove ZAP-related environment variables from `docker-compose.yml`
@@ -174,9 +174,9 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 3.8 Add `tenant_id` column to `baselines` table in `models.py`
   - [ ] 3.9 Add `tenant_id` column to `sboms` table in `models.py`
   - [ ] 3.10 Add database indexes on `tenant_id` columns for performance
-  - [ ] 3.11 Create tenant context middleware (`core/tenant_context.py`) to extract tenant from user/API key
-  - [ ] 3.12 Update all database queries to include tenant filter
-  - [ ] 3.13 Update all API endpoints to validate tenant access
+  - [ ] 3.11 Create tenant context middleware (`core/tenant_context.py`) that extracts tenant_id from: (1) authenticated user's `tenant_id` field, (2) API key's associated `tenant_id`, (3) session cookie's tenant context
+  - [ ] 3.12 Update database queries in `server.py` (scan queries, finding queries, baseline queries, SBOM queries) to automatically filter by `tenant_id` from tenant context
+  - [ ] 3.13 Update API endpoints in `server.py` (all `/api/v1/*` endpoints) to validate tenant access using tenant context middleware before processing requests
   - [ ] 3.14 Create user authentication module (`core/auth.py`) with email/password support
   - [ ] 3.15 Implement password hashing using bcrypt or Argon2
   - [ ] 3.16 Implement secure password policies (min 12 chars, complexity requirements)
@@ -189,7 +189,7 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 3.23 Create RBAC module (`core/rbac.py`) with role definitions (Super Admin, Tenant Admin, Viewer, Scanner)
   - [ ] 3.24 Implement decorator-based role checking on API endpoints
   - [ ] 3.25 Update API key authentication to associate keys with users (and tenants)
-  - [ ] 3.26 Implement session management (`core/session.py`) with 48-hour timeout
+  - [ ] 3.26 Implement session management (`core/session.py`) with 48-hour timeout (configurable via `SESSION_TIMEOUT_HOURS` env var, default 48), session refresh on activity, and session invalidation on logout
   - [ ] 3.27 Store API key hash in session cookie with secure, signed cookies
   - [ ] 3.28 Implement session refresh on activity
   - [ ] 3.29 Create tenant selector/switcher UI component in header (`base.html`)
@@ -203,8 +203,8 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 3.37 **REGRESSION TESTING - Section 3.0**: Run existing test suite and verify scan creation/execution (with tenant context), findings display (tenant-scoped), API key authentication (with tenant association), baseline/SBOM functionality (tenant-scoped), dashboard statistics (tenant-scoped), API endpoints (with tenant filtering), database migration (if applicable), logging/telemetry (with tenant context), and all sections 1.0-2.0 features still work
 
 - [ ] 4.0 Security & Data Protection
-  - [ ] 4.1 Create database sharding module (`core/sharding.py`) with schema-based or table-based strategy
-  - [ ] 4.2 Implement shard routing based on `tenant_id` hash or direct mapping
+  - [ ] 4.1 Create database sharding module (`core/sharding.py`) using schema-based strategy (one schema per tenant) with tenant_id-to-schema mapping stored in secure metadata table
+  - [ ] 4.2 Implement shard routing function that maps `tenant_id` to schema name using consistent hashing (SHA-256 hash of tenant_id, modulo number of shards) with configurable shard count
   - [ ] 4.3 Create connection pooling with shard-aware routing
   - [ ] 4.4 Implement shard management API for adding/removing shards
   - [ ] 4.5 Store shard metadata securely (not in tenant-accessible tables)
@@ -223,7 +223,7 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 4.18 Add MFA verification endpoint (`POST /api/v1/users/mfa/verify`)
   - [ ] 4.19 Implement password expiration and rotation policies
   - [ ] 4.20 Implement secure session management (HTTP-only, secure cookies, SameSite)
-  - [ ] 4.21 Implement rate limiting (per API key, per IP, per tenant)
+  - [ ] 4.21 Implement rate limiting using `slowapi` or `fastapi-limiter` with limits: (1) per API key (100 requests/minute), (2) per IP address (200 requests/minute), (3) per tenant (1000 requests/minute), with configurable limits via environment variables
   - [ ] 4.22 Add API key rotation and expiration policies
   - [ ] 4.23 Implement request size limits and timeout limits
   - [ ] 4.24 Add input validation and sanitization (prevent injection attacks)
@@ -260,10 +260,10 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 5.19 Add analytics export functionality (CSV, JSON, PDF)
   - [ ] 5.20 Create analytics dashboard UI page (`analytics.html`) with Chart.js
   - [ ] 5.21 Create ML insights module (`core/ml_insights.py`) using scikit-learn
-  - [ ] 5.22 Implement anomaly detection using statistical methods (pre-trained models only)
-  - [ ] 5.23 Implement risk scoring based on finding patterns (pre-trained models only)
-  - [ ] 5.24 Implement finding correlation analysis (pre-trained models only)
-  - [ ] 5.25 Implement remediation recommendation prioritization (pre-trained models only)
+  - [ ] 5.22 Implement anomaly detection using Isolation Forest algorithm (scikit-learn) with pre-trained model weights (no training on customer data, use synthetic training data only)
+  - [ ] 5.23 Implement risk scoring using weighted severity scoring algorithm (critical=10, high=5, medium=2, low=1) with time-decay factor and scanner confidence weights
+  - [ ] 5.24 Implement finding correlation analysis using statistical correlation (Pearson correlation coefficient) on finding patterns (severity, category, scanner combinations)
+  - [ ] 5.25 Implement remediation recommendation prioritization using rule-based scoring (severity weight × frequency × time since first seen) with no ML training on customer data
   - [ ] 5.26 Ensure ML models do NOT learn from customer data
   - [ ] 5.27 Add ML insights panel to analytics dashboard (if ML features enabled)
   - [ ] 5.28 Add feature flag to enable/disable ML features
@@ -288,28 +288,28 @@ Based on: `prd-platform-enhancements.md`
   - [ ] 5.47 **FINAL REGRESSION TESTING**: Run complete end-to-end test suite covering all sections (1.0-5.0), test complete user workflows (login → scan → analytics), test multi-tenant scenarios end-to-end, verify all PRD requirements are met, create comprehensive test report
 
 - [ ] 6.0 Unit Testing (Write alongside implementation)
-  - [ ] 6.1 Write unit tests for API key generation, session management, tenant context, RBAC, password hashing, MFA, encryption/decryption, shard routing, tenant settings validation, analytics calculations, ML insights, logging functions, database models, API endpoints, data aggregation
+  - [ ] 6.1 Write unit tests alongside implementation for: API key generation/validation (`test_api_keys.py`), session management (`test_session.py`), tenant context middleware (`test_tenant_context.py`), RBAC decorators (`test_rbac.py`), password hashing (`test_auth.py`), MFA TOTP (`test_auth.py`), encryption/decryption (`test_encryption.py`), shard routing (`test_sharding.py`), tenant settings validation (`test_tenant_settings.py`), analytics calculations (`test_analytics.py`), logging functions (`test_logging.py`), database models (`test_models.py`), API endpoints (`test_api.py`), data aggregation (`test_analytics.py`)
   - [ ] 6.2 Achieve minimum 80% code coverage for new code, 100% for critical security functions
   - [ ] 6.3 Set up pytest configuration in `conftest.py` with fixtures for tenants, users, API keys, scans, findings
 
 - [ ] 7.0 Integration Testing
-  - [ ] 7.1 Write integration tests for API endpoints, authentication flow, authorization, tenant isolation, error handling, rate limiting, database schema initialization, shard routing, encryption/decryption, data isolation, transaction handling, key management integration, logging system integration, session persistence, API key workflows, user management workflows, tenant settings, analytics data aggregation, scan execution with tenant context, findings storage/retrieval with tenant isolation
+  - [ ] 7.1 Write integration tests in `test_integration.py` covering: (1) API endpoint flows (scan creation → execution → findings retrieval), (2) Authentication flow (login → session → API key validation), (3) Authorization (RBAC role checking on protected endpoints), (4) Tenant isolation (verify tenant A cannot access tenant B data), (5) Error handling (invalid inputs, missing resources), (6) Rate limiting (verify limits enforced), (7) Database schema initialization (migrations, shard creation), (8) Shard routing (verify queries route to correct shard), (9) Encryption/decryption (verify data encrypted at rest, decrypted on read), (10) Data isolation (verify encrypted data isolated per tenant), (11) Session persistence (verify session survives across requests), (12) API key workflows (create → use → revoke), (13) User management workflows (create → assign role → deactivate), (14) Tenant settings (create → update → validate), (15) Analytics data aggregation (verify tenant-scoped aggregation), (16) Scan execution with tenant context (verify scans associated with correct tenant), (17) Findings storage/retrieval with tenant isolation (verify findings only visible to owning tenant)
 
 - [ ] 8.0 Performance Testing
   - [ ] 8.1 Set up performance testing environment with production-like data
-  - [ ] 8.2 Write load tests for API endpoints (1000+ concurrent requests), database queries, shard routing, encryption/decryption performance impact
-  - [ ] 8.3 Write stress tests for system limits (max tenants, users, scans), memory/CPU usage, database connection pooling
-  - [ ] 8.4 Measure and verify API response time <200ms (95th percentile), database query time <100ms (95th percentile), page load time <2 seconds, scan execution time within timeout, analytics dashboard performance (10,000+ findings), findings aggregation performance, pagination performance, caching effectiveness
+  - [ ] 8.2 Write load tests using `locust` or `pytest-benchmark` for: (1) API endpoints (1000+ concurrent requests to `/api/v1/scans`, `/api/v1/findings`, `/api/v1/api-keys`), (2) Database queries (SELECT queries with tenant filtering, JOIN queries), (3) Shard routing (verify routing overhead <5ms), (4) Encryption/decryption (verify performance impact <10% overhead)
+  - [ ] 8.3 Write stress tests for: (1) System limits (test with 100+ tenants, 1000+ users per tenant, 10,000+ scans per tenant), (2) Memory/CPU usage (monitor under sustained load), (3) Database connection pooling (verify pool exhaustion handling, max connections)
+  - [ ] 8.4 Measure and verify performance targets: (1) API response time <200ms (95th percentile) for all endpoints, (2) Database query time <100ms (95th percentile) for tenant-scoped queries, (3) Page load time <2 seconds for all UI pages, (4) Scan execution time within configured timeout, (5) Analytics dashboard performance (loads in <3 seconds with 10,000+ findings), (6) Findings aggregation performance (aggregates 10,000+ findings in <1 second), (7) Pagination performance (page loads in <500ms), (8) Caching effectiveness (verify cache hit rate >80% for frequently accessed data)
   - [ ] 8.5 Document performance benchmarks and create performance test reports
 
 - [ ] 9.0 Security Testing
-  - [ ] 9.1 Write security tests for password policies, MFA implementation, session management, RBAC, API key validation, SQL injection prevention, XSS prevention, CSRF protection, input validation, output encoding, encryption at rest/in transit, data masking in logs, secure data deletion, tenant isolation, rate limiting, secrets management
+  - [ ] 9.1 Write security tests in `test_security.py` for: (1) Password policies (min 12 chars, complexity, expiration), (2) MFA implementation (TOTP setup, verification, bypass attempts), (3) Session management (session timeout, secure cookies, session fixation), (4) RBAC (role-based access control, privilege escalation attempts), (5) API key validation (format validation, revocation, expiration), (6) SQL injection prevention (test with malicious SQL in inputs), (7) XSS prevention (test with script tags in inputs), (8) CSRF protection (verify CSRF tokens required), (9) Input validation (test with malformed inputs, oversized payloads), (10) Output encoding (verify HTML/JS encoding in responses), (11) Encryption at rest (verify data encrypted in database), (12) Encryption in transit (verify TLS 1.3 enforced), (13) Data masking in logs (verify sensitive data masked), (14) Secure data deletion (verify soft-deleted data not accessible), (15) Tenant isolation (verify cross-tenant access prevented), (16) Rate limiting (verify limits enforced, bypass attempts fail), (17) Secrets management (verify secrets never in code/logs)
   - [ ] 9.2 Perform dependency vulnerability scanning, container image security scanning, manual security audit of authentication and authorization flows
   - [ ] 9.3 Document security test results and create security test reports
 
 - [ ] 10.0 Acceptance Testing
   - [ ] 10.1 Create acceptance test plan based on user stories from PRD
-  - [ ] 10.2 Write acceptance tests for all user stories from PRD (findings aggregation, logging, container optimization, API keys, modern UI, multi-tenancy, user management, analytics, tenant isolation, tenant settings, encryption, documentation)
+  - [ ] 10.2 Write acceptance tests in `test_acceptance.py` for user stories from PRD: (1) Findings aggregation (user can view all findings across scans with filtering), (2) Logging (logs stored locally, OTEL compliant, data masked), (3) Container optimization (container size reduced, no test files, ZAP removed), (4) API keys (user can create named API keys with custom format), (5) Modern UI (footer updated, statistics cards responsive, enterprise-ready design), (6) Multi-tenancy (user can switch tenants, data isolated), (7) User management (admin can create users, assign roles, deactivate), (8) Analytics (user can view trends, distributions, metrics), (9) Tenant isolation (tenant A cannot access tenant B data), (10) Tenant settings (admin can configure tenant-specific settings), (11) Encryption (data encrypted at rest, keys managed securely), (12) Documentation (user can access "How To" page with markdown docs)
   - [ ] 10.3 Write end-to-end acceptance tests for complete user workflows and multi-tenant scenarios
   - [ ] 10.4 Validate all success metrics from PRD are met
   - [ ] 10.5 Perform user acceptance testing with stakeholders
