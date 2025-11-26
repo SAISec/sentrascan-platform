@@ -327,9 +327,12 @@ def test_error_page_accessibility(page: Page, api_base):
     """Test that error pages are accessible."""
     page.goto(f"{api_base}/nonexistent-page", wait_until="networkidle")
     
-    # Check semantic structure
-    h1 = page.locator("h1")
-    h2 = page.locator("h2")
+    # Check semantic structure - use error page specific selectors
+    error_page = page.locator(".error-page, .error-content").first
+    expect(error_page).to_be_visible()
+    
+    h1 = error_page.locator("h1").first
+    h2 = error_page.locator("h2").first
     
     expect(h1).to_be_visible()
     expect(h2).to_be_visible()
@@ -340,7 +343,14 @@ def test_error_page_accessibility(page: Page, api_base):
     
     # Test keyboard navigation
     dashboard_link.focus()
-    assert dashboard_link == page.locator(":focus")
+    # Check that the focused element is the dashboard link
+    focused_element = page.locator(":focus")
+    assert focused_element.count() > 0, "An element should be focused"
+    # Verify it's the dashboard link by checking href or text
+    focused_href = focused_element.get_attribute("href")
+    dashboard_href = dashboard_link.get_attribute("href")
+    assert focused_href == dashboard_href or focused_element.text_content() == dashboard_link.text_content(), \
+        "Focused element should be the dashboard link"
 
 
 @pytest.mark.integration
