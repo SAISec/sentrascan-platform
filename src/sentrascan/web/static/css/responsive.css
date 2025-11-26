@@ -35,13 +35,21 @@
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .stat-card-value {
-    font-size: var(--font-size-2xl);
+    font-size: var(--font-size-xl);
   }
 
   .stat-card-icon {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
+  }
+
+  .stat-card-icon span {
+    font-size: 18px;
   }
 
   .charts-grid {
@@ -64,13 +72,21 @@
     grid-template-columns: 1fr;
   }
 
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
   .stat-card-value {
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-lg);
   }
 
   .stat-card-icon {
     width: 32px;
     height: 32px;
+  }
+
+  .stat-card-icon span {
+    font-size: 16px;
   }
 
   .table-container {

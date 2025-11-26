@@ -381,6 +381,24 @@ select:focus,
 .d-grid { display: grid; }
 .d-none { display: none; }
 
+/* Grid Utilities */
+.grid {
+  display: grid;
+  gap: var(--spacing-lg);
+}
+
+.grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 /* Flexbox Utilities */
 .flex-row { flex-direction: row; }
 .flex-column { flex-direction: column; }

@@ -134,7 +134,10 @@
 <!-- Findings Section -->
 <div class="findings-section">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
-    <h2 style="margin: 0;">Findings ({{ findings|length }})</h2>
+    <div style="display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap;">
+      <h2 style="margin: 0;">Findings ({{ findings|length }})</h2>
+      <a href="/findings?scan_id={{ scan.id }}" class="btn btn-secondary btn-sm" style="text-decoration: none;">View in All Findings</a>
+    </div>
     <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap; align-items: center;">
       <div class="bulk-actions" id="bulk-actions" style="display: none; align-items: center; gap: var(--spacing-sm); padding: var(--spacing-sm) var(--spacing-md); background: var(--color-primary); color: var(--color-text-inverse); border-radius: var(--radius-md);">
         <span id="selected-count" style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium);">0 selected</span>

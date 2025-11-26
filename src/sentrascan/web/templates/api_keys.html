@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}API Keys - SentraScan Platform{% endblock %}
+
+{% block content %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<section class="page-header" aria-labelledby="page-title" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
+    <div>
+      <h1 id="page-title" style="margin: 0 0 var(--spacing-xs) 0;">API Keys</h1>
+      <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+        Manage your API keys for programmatic access
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Create API Key Form -->
+<section class="card" style="margin-bottom: var(--spacing-xl);">
+  <h2 style="margin: 0 0 var(--spacing-lg) 0;">Create New API Key</h2>
+  <form id="create-api-key-form" style="display: flex; gap: var(--spacing-md); align-items: end; flex-wrap: wrap;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="api-key-name" class="form-label">Name (Optional)</label>
+      <input 
+        type="text" 
+        id="api-key-name" 
+        name="name" 
+        class="form-input" 
+        placeholder="e.g., Production API Key"
+        maxlength="100"
+      >
+    </div>
+    <div class="form-group" style="margin-bottom: 0;">
+      <button type="submit" class="btn btn-primary" id="create-key-btn">Create API Key</button>
+    </div>
+  </form>
+</section>
+
+<!-- New API Key Display (shown after creation) -->
+<div id="new-api-key-display" class="card" style="display: none; margin-bottom: var(--spacing-xl); background-color: var(--color-info-light); border-left: 4px solid var(--color-info);">
+  <h3 style="margin: 0 0 var(--spacing-md) 0; color: var(--color-info);">New API Key Created</h3>
+  <p style="margin: 0 0 var(--spacing-md) 0; color: var(--color-text-secondary);">
+    <strong>Important:</strong> Copy this API key now. You won't be able to see it again.
+  </p>
+  <div style="display: flex; gap: var(--spacing-sm); align-items: center; flex-wrap: wrap;">
+    <input 
+      type="text" 
+      id="new-api-key-value" 
+      readonly 
+      class="form-input" 
+      style="flex: 1; min-width: 300px; font-family: var(--font-family-mono); font-size: var(--font-size-sm);"
+    >
+    <button type="button" class="btn btn-secondary" id="copy-api-key-btn" aria-label="Copy API key to clipboard">
+      <span class="icon icon-copy" aria-hidden="true"></span> Copy
+    </button>
+  </div>
+  <p id="copy-success-message" style="display: none; margin: var(--spacing-sm) 0 0 0; color: var(--color-success); font-size: var(--font-size-sm);">
+    ✓ API key copied to clipboard
+  </p>
+</div>
+
+<!-- API Keys List -->
+<section class="card">
+  <h2 style="margin: 0 0 var(--spacing-lg) 0;">Your API Keys</h2>
+  <div id="api-keys-list">
+    <p style="color: var(--color-text-secondary);">Loading API keys...</p>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/api_keys.js" defer></script>
+{% endblock %}
+

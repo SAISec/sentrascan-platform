@@ -18,6 +18,9 @@ from sentrascan.modules.mcp.scanner import MCPScanner
 from sentrascan.core.policy import PolicyEngine
 import csv
 import io
+import secrets
+import random
+import re
 
 app = FastAPI(title="SentraScan Platform")
 
@@ -70,6 +73,38 @@ def get_db():
 def get_db_session():
     """Get a database session that must be explicitly closed."""
     return SessionLocal()
+
+def generate_api_key() -> str:
+    """
+    Generate API key with format: ss-proj-h_ + 147-character alphanumeric string (A-Z, a-z, 0-9) 
+    with exactly one random hyphen inserted at random position.
+    """
+    prefix = "ss-proj-h_"
+    # Generate 147 alphanumeric characters
+    chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    random_chars = ''.join(secrets.choice(chars) for _ in range(147))
+    
+    # Insert exactly one hyphen at a random position (not at start or end of the 147-char string)
+    hyphen_position = random.randint(1, 146)
+    random_chars = random_chars[:hyphen_position] + '-' + random_chars[hyphen_position:]
+    
+    return prefix + random_chars
+
+def validate_api_key_format(api_key: str) -> bool:
+    """
+    Validate API key format matches requirement: ss-proj-h_ prefix and 147-character 
+    alphanumeric string with exactly one hyphen.
+    """
+    pattern = r'^ss-proj-h_[A-Za-z0-9-]{147}$'
+    if not re.match(pattern, api_key):
+        return False
+    
+    # Check that there's exactly one hyphen in the 147-character part
+    key_part = api_key[10:]  # After "ss-proj-h_"
+    if key_part.count('-') != 1:
+        return False
+    
+    return True
 
 def require_api_key(x_api_key: str | None = Header(default=None), db: Session = Depends(get_db)):
     # Allow unauthenticated health
@@ -716,6 +751,91 @@ def ui_login_post(request: Request, response: Response, api_key: str = Form(...)
     finally:
         db.close()
 
+@app.get("/api-keys")
+def ui_api_keys(request: Request):
+    """API Keys management page"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user or user.role != "admin":
+            return RedirectResponse(url="/login", status_code=302)
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "API Keys", "url": "/api-keys"}
+        ]
+        
+        return templates.TemplateResponse(
+            "api_keys.html",
+            {
+                "request": request,
+                "breadcrumb_items": breadcrumb_items
+            }
+        )
+    finally:
+        db.close()
+
+@app.get("/findings")
+def ui_findings_aggregate(request: Request):
+    """Aggregate findings view across all scans"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get query parameters
+        severity = request.query_params.get("severity")
+        category = request.query_params.get("category")
+        scanner = request.query_params.get("scanner")
+        scan_id = request.query_params.get("scan_id")
+        page = int(request.query_params.get("page", 1))
+        page_size = int(request.query_params.get("page_size", 50))
+        sort = request.query_params.get("sort", "created_at")
+        order = request.query_params.get("order", "desc")
+        
+        offset = (page - 1) * page_size
+        
+        # Get unique values for filter dropdowns
+        all_findings = db.query(Finding).all()
+        categories = sorted(set(f.category for f in all_findings if f.category))
+        scanners = sorted(set(f.scanner for f in all_findings if f.scanner))
+        severities = ["critical", "high", "medium", "low"]
+        
+        # Get scans for scan filter
+        scans = db.query(Scan).order_by(Scan.created_at.desc()).limit(100).all()
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "All Findings", "url": "/findings"}
+        ]
+        
+        return templates.TemplateResponse(
+            "findings_aggregate.html",
+            {
+                "request": request,
+                "breadcrumb_items": breadcrumb_items,
+                "categories": categories,
+                "scanners": scanners,
+                "severities": severities,
+                "scans": scans,
+                "filters": {
+                    "severity": severity,
+                    "category": category,
+                    "scanner": scanner,
+                    "scan_id": scan_id
+                },
+                "pagination": {
+                    "page": page,
+                    "page_size": page_size,
+                    "sort": sort,
+                    "order": order
+                }
+            }
+        )
+    finally:
+        db.close()
+
 @app.get("/logout")
 def ui_logout():
     resp = RedirectResponse(url="/login", status_code=302)
@@ -940,6 +1060,83 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
     finally:
         db.close()
 
+@app.get("/api/v1/findings")
+def list_all_findings(
+    api_key=Depends(require_api_key), 
+    db: Session = Depends(get_db),
+    severity: str | None = None,
+    category: str | None = None,
+    scanner: str | None = None,
+    scan_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc"
+):
+    """List all findings across all scans with filtering and pagination"""
+    query = db.query(Finding).join(Scan)
+    
+    # Apply filters
+    if severity:
+        query = query.filter(Finding.severity == severity)
+    if category:
+        query = query.filter(Finding.category == category)
+    if scanner:
+        query = query.filter(Finding.scanner == scanner)
+    if scan_id:
+        query = query.filter(Finding.scan_id == scan_id)
+    
+    # Apply sorting
+    if sort == "created_at":
+        # Sort by scan created_at
+        sort_column = Scan.created_at
+    elif sort == "severity":
+        sort_column = Finding.severity
+    elif sort == "category":
+        sort_column = Finding.category
+    elif sort == "scanner":
+        sort_column = Finding.scanner
+    elif sort == "title":
+        sort_column = Finding.title
+    else:
+        sort_column = Scan.created_at  # Default
+    
+    if order == "desc":
+        query = query.order_by(sort_column.desc())
+    else:
+        query = query.order_by(sort_column.asc())
+    
+    # Get total count before pagination
+    total = query.count()
+    
+    # Apply pagination
+    findings = query.offset(offset).limit(limit).all()
+    
+    return {
+        "findings": [
+            {
+                "id": f.id,
+                "scan_id": f.scan_id,
+                "scan_type": f.scan.scan_type if f.scan else None,
+                "scan_target": f.scan.target_path if f.scan else None,
+                "scan_created_at": f.scan.created_at.isoformat() if f.scan and f.scan.created_at else None,
+                "severity": f.severity,
+                "category": f.category,
+                "scanner": f.scanner,
+                "title": f.title,
+                "description": f.description,
+                "location": f.location,
+                "remediation": f.remediation,
+                "evidence": f.evidence
+            }
+            for f in findings
+        ],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + limit) < total
+    }
+
 @app.get("/api/v1/scans/{scan_id}/findings/export")
 def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
     """Export findings for a scan as CSV or JSON"""
@@ -1104,6 +1301,81 @@ def get_scan_status(scan_id: str, db: Session = Depends(get_db)):
         "duration_ms": scan.duration_ms or 0,
         "timestamp": scan.created_at.isoformat() if scan.created_at else None
     }
+
+@app.post("/api/v1/api-keys")
+def create_api_key(request: Request, name: str | None = Form(None), db: Session = Depends(get_db)):
+    """
+    Create a new API key with optional name.
+    Returns the generated API key (plaintext) and key metadata.
+    """
+    # Check if user is authenticated (via session or API key)
+    user = get_session_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(403, "Admin access required")
+    
+    # Generate new API key
+    new_key = generate_api_key()
+    key_hash = APIKey.hash_key(new_key)
+    
+    # Check for hash collision (very unlikely but possible)
+    existing = db.query(APIKey).filter(APIKey.key_hash == key_hash).first()
+    if existing:
+        # Retry generation (extremely rare case)
+        new_key = generate_api_key()
+        key_hash = APIKey.hash_key(new_key)
+    
+    # Create API key record
+    api_key_record = APIKey(
+        name=name,
+        key_hash=key_hash,
+        role="viewer",  # Default role
+        is_revoked=False
+    )
+    db.add(api_key_record)
+    db.commit()
+    db.refresh(api_key_record)
+    
+    return {
+        "id": api_key_record.id,
+        "name": api_key_record.name,
+        "key": new_key,  # Return plaintext key (only shown once)
+        "created_at": api_key_record.created_at.isoformat() if api_key_record.created_at else None
+    }
+
+@app.get("/api/v1/api-keys")
+def list_api_keys(request: Request, db: Session = Depends(get_db)):
+    """List all API keys (metadata only, no plaintext keys)"""
+    user = get_session_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(403, "Admin access required")
+    
+    keys = db.query(APIKey).filter(APIKey.is_revoked == False).order_by(APIKey.created_at.desc()).all()
+    return [
+        {
+            "id": key.id,
+            "name": key.name,
+            "role": key.role,
+            "created_at": key.created_at.isoformat() if key.created_at else None,
+            "is_revoked": key.is_revoked
+        }
+        for key in keys
+    ]
+
+@app.delete("/api/v1/api-keys/{key_id}")
+def revoke_api_key(key_id: str, request: Request, db: Session = Depends(get_db)):
+    """Revoke an API key"""
+    user = get_session_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(403, "Admin access required")
+    
+    key = db.query(APIKey).filter(APIKey.id == key_id).first()
+    if not key:
+        raise HTTPException(404, "API key not found")
+    
+    key.is_revoked = True
+    db.commit()
+    
+    return {"message": "API key revoked", "id": key_id}
 
 def run_server(host: str, port: int):
     import uvicorn

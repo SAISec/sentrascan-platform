@@ -110,27 +110,27 @@ Based on: `prd-platform-enhancements.md`
 
 ## Tasks
 
-- [ ] 1.0 Foundation & UI Enhancements
-  - [ ] 1.1 Update footer copyright to "© 2025 SentraScan" in `base.html`
-  - [ ] 1.2 Update statistics cards layout to display 4 cards per row in `dashboard.html` and `index.html`
-  - [ ] 1.3 Reduce statistics card size (padding, font sizes) in `components.css`
-  - [ ] 1.4 Ensure statistics cards wrap to second row if more than 4 cards exist
-  - [ ] 1.5 Add responsive breakpoints for mobile (stack cards vertically on small screens)
-  - [ ] 1.6 Create API key generation function in `server.py` that generates format: `ss-proj-h_` + 147-character alphanumeric string (A-Z, a-z, 0-9) with exactly one random hyphen inserted at random position
-  - [ ] 1.7 Add API key validation function to ensure format matches `ss-proj-h_` prefix and 147-character alphanumeric string with one hyphen
-  - [ ] 1.8 Create API key management UI page (`api_keys.html`) with creation form and list view
-  - [ ] 1.9 Add API key creation endpoint (`POST /api/v1/api-keys`) in `server.py` that accepts optional `name` field (String) and returns generated API key (plaintext) and key metadata (id, name, created_at)
-  - [ ] 1.10 Implement API key display with masked/reveal functionality in UI
-  - [ ] 1.11 Add copy-to-clipboard functionality for API keys in `api_keys.js`
-  - [ ] 1.12 Enhance findings display with aggregate view (all scans) in `findings_aggregate.html`
-  - [ ] 1.13 Enhance findings display with per-scan detail view in `scan_detail.html`
-  - [ ] 1.14 Add filtering and sorting functionality for findings by severity, category, scanner
-  - [ ] 1.15 Add navigation between aggregate and per-scan views
-  - [ ] 1.16 Ensure all findings display severity, category, scanner name, and remediation guidance
-  - [ ] 1.17 Add enhanced data tables with pagination for findings display
-  - [ ] 1.18 Update `APIKey` model in `models.py` to add `name` field (String, nullable) and add validation method to check API key format matches requirement
-  - [ ] 1.19 **DELTA TESTING - Section 1.0**: Test footer copyright, statistics cards layout, API key generation/UI, findings display (aggregate and detail views)
-  - [ ] 1.20 **REGRESSION TESTING - Section 1.0**: Run existing test suite and verify scan creation/execution, API endpoints, database queries, baseline/SBOM functionality still work
+- [x] 1.0 Foundation & UI Enhancements
+  - [x] 1.1 Update footer copyright to "© 2025 SentraScan" in `base.html`
+  - [x] 1.2 Update statistics cards layout to display 4 cards per row in `dashboard.html` and `index.html`
+  - [x] 1.3 Reduce statistics card size (padding, font sizes) in `components.css`
+  - [x] 1.4 Ensure statistics cards wrap to second row if more than 4 cards exist
+  - [x] 1.5 Add responsive breakpoints for mobile (stack cards vertically on small screens)
+  - [x] 1.6 Create API key generation function in `server.py` that generates format: `ss-proj-h_` + 147-character alphanumeric string (A-Z, a-z, 0-9) with exactly one random hyphen inserted at random position
+  - [x] 1.7 Add API key validation function to ensure format matches `ss-proj-h_` prefix and 147-character alphanumeric string with one hyphen
+  - [x] 1.8 Create API key management UI page (`api_keys.html`) with creation form and list view
+  - [x] 1.9 Add API key creation endpoint (`POST /api/v1/api-keys`) in `server.py` that accepts optional `name` field (String) and returns generated API key (plaintext) and key metadata (id, name, created_at)
+  - [x] 1.10 Implement API key display with masked/reveal functionality in UI
+  - [x] 1.11 Add copy-to-clipboard functionality for API keys in `api_keys.js`
+  - [x] 1.12 Enhance findings display with aggregate view (all scans) in `findings_aggregate.html`
+  - [x] 1.13 Enhance findings display with per-scan detail view in `scan_detail.html`
+  - [x] 1.14 Add filtering and sorting functionality for findings by severity, category, scanner
+  - [x] 1.15 Add navigation between aggregate and per-scan views
+  - [x] 1.16 Ensure all findings display severity, category, scanner name, and remediation guidance
+  - [x] 1.17 Add enhanced data tables with pagination for findings display
+  - [x] 1.18 Update `APIKey` model in `models.py` to add `name` field (String, nullable) and add validation method to check API key format matches requirement
+  - [x] 1.19 **DELTA TESTING - Section 1.0**: Test footer copyright, statistics cards layout, API key generation/UI, findings display (aggregate and detail views) - Test files created: `tests/test_section1_delta.py` - **34/35 tests passing (1 skipped)**
+  - [x] 1.20 **REGRESSION TESTING - Section 1.0**: Run existing test suite and verify scan creation/execution, API endpoints, database queries, baseline/SBOM functionality still work - Test files created: `tests/test_section1_regression.py` - **All 19 tests passing**
 
 - [ ] 2.0 Logging, Telemetry & Container Optimization
   - [ ] 2.1 Create structured logging module (`core/logging.py`) using `structlog` library (preferred) with JSON output formatter

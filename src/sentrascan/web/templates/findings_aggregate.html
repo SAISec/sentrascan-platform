@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+
+{% block title %}All Findings - SentraScan Platform{% endblock %}
+
+{% block content %}
+{% include 'components/_breadcrumb.html' with context %}
+
+<!-- Page Header -->
+<section class="page-header" aria-labelledby="page-title" style="margin-bottom: var(--spacing-xl);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--spacing-md);">
+    <div>
+      <h1 id="page-title" style="margin: 0 0 var(--spacing-xs) 0;">All Findings</h1>
+      <p style="margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-base);">
+        View and filter findings across all scans
+      </p>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+      <a href="/" class="btn btn-secondary">View Scans</a>
+    </div>
+  </div>
+</section>
+
+<!-- Filters Section -->
+<section class="card" style="margin-bottom: var(--spacing-lg); padding: var(--spacing-md);">
+  <h2 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-lg);">Filters</h2>
+  <form id="findings-filters-form" method="get" action="/findings" style="display: flex; gap: var(--spacing-md); flex-wrap: wrap; align-items: end;">
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_severity" class="form-label">Severity</label>
+      <select id="filter_severity" name="severity" class="form-select">
+        <option value="">All Severities</option>
+        {% for sev in severities %}
+        <option value="{{ sev }}" {% if filters.severity == sev %}selected{% endif %}>{{ sev|title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_category" class="form-label">Category</label>
+      <select id="filter_category" name="category" class="form-select">
+        <option value="">All Categories</option>
+        {% for cat in categories %}
+        <option value="{{ cat }}" {% if filters.category == cat %}selected{% endif %}>{{ cat }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 150px;">
+      <label for="filter_scanner" class="form-label">Scanner</label>
+      <select id="filter_scanner" name="scanner" class="form-select">
+        <option value="">All Scanners</option>
+        {% for sc in scanners %}
+        <option value="{{ sc }}" {% if filters.scanner == sc %}selected{% endif %}>{{ sc }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+      <label for="filter_scan" class="form-label">Scan</label>
+      <select id="filter_scan" name="scan_id" class="form-select">
+        <option value="">All Scans</option>
+        {% for scan in scans %}
+        <option value="{{ scan.id }}" {% if filters.scan_id == scan.id %}selected{% endif %}>
+          {{ scan.scan_type|upper }} - {{ scan.target_path[:50] }}{% if scan.target_path|length > 50 %}...{% endif %} ({{ scan.created_at.strftime('%Y-%m-%d') if scan.created_at else 'N/A' }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" style="margin-bottom: 0; display: flex; gap: var(--spacing-sm);">
+      <button type="submit" class="btn btn-secondary">Apply Filters</button>
+      <a href="/findings" class="btn btn-secondary">Clear</a>
+    </div>
+  </form>
+</section>
+
+<!-- Findings Table -->
+<section class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
+    <h2 style="margin: 0;">Findings</h2>
+    <div style="display: flex; gap: var(--spacing-sm); align-items: center; flex-wrap: wrap;">
+      <label for="page_size" class="form-label" style="margin: 0; font-size: var(--font-size-sm);">Per page:</label>
+      <select id="page_size" name="page_size" class="form-select" style="width: auto; min-width: 80px;" onchange="updatePageSize(this.value)">
+        <option value="25" {% if pagination.page_size == 25 %}selected{% endif %}>25</option>
+        <option value="50" {% if pagination.page_size == 50 %}selected{% endif %}>50</option>
+        <option value="100" {% if pagination.page_size == 100 %}selected{% endif %}>100</option>
+      </select>
+    </div>
+  </div>
+  
+  <div id="findings-container">
+    <p style="color: var(--color-text-secondary);">Loading findings...</p>
+  </div>
+</section>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="/static/js/findings.js" defer></script>
+<script>
+// Initialize findings loading
+document.addEventListener('DOMContentLoaded', function() {
+  loadFindings();
+});
+
+function updatePageSize(size) {
+  const url = new URL(window.location);
+  url.searchParams.set('page_size', size);
+  url.searchParams.set('page', '1');
+  window.location.href = url.toString();
+}
+</script>
+{% endblock %}
+

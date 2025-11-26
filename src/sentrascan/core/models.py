@@ -44,7 +44,7 @@ class Finding(Base):
 class APIKey(Base):
     __tablename__ = "api_keys"
     id = Column(String, primary_key=True, default=lambda: str(_uuid.uuid4()))
-    name = Column(String)
+    name = Column(String, nullable=True)
     role = Column(String, default="viewer")
     key_hash = Column(String, unique=True)
     is_revoked = Column(Boolean, default=False)
@@ -54,6 +54,24 @@ class APIKey(Base):
     def hash_key(key: str) -> str:
         import hashlib
         return hashlib.sha256(key.encode()).hexdigest()
+    
+    @staticmethod
+    def validate_key_format(key: str) -> bool:
+        """
+        Validate API key format matches requirement: ss-proj-h_ prefix and 
+        147-character alphanumeric string with exactly one hyphen.
+        """
+        import re
+        pattern = r'^ss-proj-h_[A-Za-z0-9-]{147}$'
+        if not re.match(pattern, key):
+            return False
+        
+        # Check that there's exactly one hyphen in the 147-character part
+        key_part = key[10:]  # After "ss-proj-h_"
+        if key_part.count('-') != 1:
+            return False
+        
+        return True
 
 class SBOM(Base):
     __tablename__ = "sboms"
