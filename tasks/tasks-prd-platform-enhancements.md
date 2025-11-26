@@ -1,0 +1,370 @@
+# Task List: SentraScan Platform Enhancements
+
+Based on: `prd-platform-enhancements.md`
+
+## Relevant Files
+
+### Backend Files
+- `src/sentrascan/core/models.py` - Database models (add Tenant, User, TenantSettings, AuditLog models)
+- `src/sentrascan/core/storage.py` - Database initialization and session management (add sharding support)
+- `src/sentrascan/server.py` - FastAPI server and API endpoints (add multi-tenancy, RBAC, logging, analytics endpoints)
+- `src/sentrascan/cli.py` - CLI interface (add tenant management commands)
+- `src/sentrascan/core/policy.py` - Policy engine (add tenant-specific policy support)
+- `src/sentrascan/modules/mcp/scanner.py` - MCP scanner (remove ZAP references, add tenant context)
+- `src/sentrascan/modules/mcp/zap.py` - ZAP integration (make optional or remove)
+- `src/sentrascan/modules/model/scanner.py` - Model scanner (add tenant context)
+- `src/sentrascan/core/logging.py` - New file for structured logging and telemetry
+- `src/sentrascan/core/encryption.py` - New file for encryption at rest functionality
+- `src/sentrascan/core/sharding.py` - New file for database sharding logic
+- `src/sentrascan/core/rbac.py` - New file for role-based access control
+- `src/sentrascan/core/tenant_context.py` - New file for tenant context middleware
+- `src/sentrascan/core/analytics.py` - New file for analytics engine
+- `src/sentrascan/core/ml_insights.py` - New file for ML-based insights
+- `src/sentrascan/core/tenant_settings.py` - New file for tenant settings management
+- `src/sentrascan/core/key_management.py` - New file for encryption key management
+- `src/sentrascan/core/auth.py` - New file for user authentication and MFA
+- `src/sentrascan/core/session.py` - New file for session management
+
+### Frontend Files
+- `src/sentrascan/web/templates/base.html` - Base template (update footer copyright, add navigation items)
+- `src/sentrascan/web/templates/dashboard.html` - Dashboard (update statistics cards layout)
+- `src/sentrascan/web/templates/scan_detail.html` - Scan detail page (enhance findings display)
+- `src/sentrascan/web/templates/index.html` - Home page (update statistics cards)
+- `src/sentrascan/web/templates/login.html` - Login page (add user authentication UI)
+- `src/sentrascan/web/templates/api_keys.html` - New file for API key management UI
+- `src/sentrascan/web/templates/users.html` - New file for user management UI
+- `src/sentrascan/web/templates/tenants.html` - New file for tenant management UI
+- `src/sentrascan/web/templates/tenant_settings.html` - New file for tenant settings UI
+- `src/sentrascan/web/templates/analytics.html` - New file for analytics dashboard
+- `src/sentrascan/web/templates/docs.html` - New file for documentation page
+- `src/sentrascan/web/templates/findings_aggregate.html` - New file for aggregate findings view
+- `src/sentrascan/web/static/css/main.css` - Main stylesheet (update statistics cards styles)
+- `src/sentrascan/web/static/css/components.css` - Component styles (add new component styles)
+- `src/sentrascan/web/static/js/api_keys.js` - New file for API key management JavaScript
+- `src/sentrascan/web/static/js/users.js` - New file for user management JavaScript
+- `src/sentrascan/web/static/js/tenants.js` - New file for tenant management JavaScript
+- `src/sentrascan/web/static/js/analytics.js` - New file for analytics dashboard JavaScript
+- `src/sentrascan/web/static/js/docs.js` - New file for documentation viewer JavaScript
+- `src/sentrascan/web/static/js/findings.js` - New file for findings aggregation JavaScript
+
+### Configuration & Infrastructure Files
+- `Dockerfile` - Main Dockerfile (remove ZAP, remove test dependencies)
+- `Dockerfile.production` - New file for production-only Dockerfile
+- `docker-compose.yml` - Docker Compose config (remove ZAP service)
+- `docker-compose.protected.yml` - Protected Docker Compose (add container protection)
+- `.dockerignore` - Docker ignore file (exclude tests from production builds)
+- `pyproject.toml` - Python dependencies (add logging, telemetry, encryption libraries)
+- `.env.example` - Environment variables example (add new config variables)
+
+### Documentation Files
+- `docs/getting-started/README.md` - New file for getting started guide
+- `docs/user-guide/README.md` - New file for user guide
+- `docs/api/README.md` - New file for API documentation
+- `docs/how-to/README.md` - New file for how-to guides
+- `docs/troubleshooting/README.md` - New file for troubleshooting guide
+- `docs/faq/README.md` - New file for FAQ
+- `docs/best-practices/README.md` - New file for best practices
+- `docs/glossary/README.md` - New file for glossary
+
+### Test Files
+- `tests/test_models.py` - Tests for database models (add tenant, user, settings tests)
+- `tests/test_auth.py` - New file for authentication tests
+- `tests/test_rbac.py` - New file for RBAC tests
+- `tests/test_tenant_isolation.py` - New file for tenant isolation tests
+- `tests/test_encryption.py` - New file for encryption tests
+- `tests/test_sharding.py` - New file for sharding tests
+- `tests/test_logging.py` - New file for logging tests
+- `tests/test_analytics.py` - New file for analytics tests
+- `tests/test_api_keys.py` - New file for API key management tests
+- `tests/test_session.py` - New file for session management tests
+- `tests/test_integration.py` - Integration tests (update with new endpoints)
+- `tests/test_performance.py` - New file for performance tests
+- `tests/test_security.py` - New file for security tests
+- `tests/test_acceptance.py` - New file for acceptance tests
+- `tests/conftest.py` - Pytest configuration (add fixtures for tenants, users, etc.)
+
+### Notes
+
+- Unit tests should be placed alongside the code files they are testing (e.g., `core/logging.py` and `tests/test_logging.py`)
+- Use `pytest` to run tests: `pytest tests/` or `pytest tests/test_specific_file.py`
+- Integration tests require a test database (PostgreSQL or SQLite)
+- Performance tests should be run in a separate environment with production-like data
+- Security tests should include both automated and manual testing
+- Acceptance tests should validate user stories from the PRD
+
+## Tasks
+
+- [ ] 1.0 Foundation & UI Enhancements
+  - [ ] 1.1 Update footer copyright to "© 2025 SentraScan" in `base.html`
+  - [ ] 1.2 Update statistics cards layout to display 4 cards per row in `dashboard.html` and `index.html`
+  - [ ] 1.3 Reduce statistics card size (padding, font sizes) in `components.css`
+  - [ ] 1.4 Ensure statistics cards wrap to second row if more than 4 cards exist
+  - [ ] 1.5 Add responsive breakpoints for mobile (stack cards vertically on small screens)
+  - [ ] 1.6 Implement API key generation with format `ss-proj-h_` + 147-character alphanumeric string with one hyphen
+  - [ ] 1.7 Add API key generation function in `server.py` using `secrets.token_urlsafe()`
+  - [ ] 1.8 Create API key management UI page (`api_keys.html`) with creation form and list view
+  - [ ] 1.9 Add API key creation endpoint (`POST /api/v1/api-keys`) with optional name field
+  - [ ] 1.10 Implement API key display with masked/reveal functionality in UI
+  - [ ] 1.11 Add copy-to-clipboard functionality for API keys in `api_keys.js`
+  - [ ] 1.12 Enhance findings display with aggregate view (all scans) in `findings_aggregate.html`
+  - [ ] 1.13 Enhance findings display with per-scan detail view in `scan_detail.html`
+  - [ ] 1.14 Add filtering and sorting functionality for findings by severity, category, scanner
+  - [ ] 1.15 Add navigation between aggregate and per-scan views
+  - [ ] 1.16 Ensure all findings display severity, category, scanner name, and remediation guidance
+  - [ ] 1.17 Add enhanced data tables with pagination for findings display
+  - [ ] 1.18 Update `APIKey` model in `models.py` to support custom names and validation
+
+- [ ] 2.0 Logging, Telemetry & Container Optimization
+  - [ ] 2.1 Create structured logging module (`core/logging.py`) using `structlog` or `python-json-logger`
+  - [ ] 2.2 Implement JSON-formatted logging to stdout/stderr
+  - [ ] 2.3 Configure log levels via environment variable (`LOG_LEVEL`)
+  - [ ] 2.4 Implement log file storage in `/app/logs` directory
+  - [ ] 2.5 Add log rotation and size limits
+  - [ ] 2.6 Implement log archiving (compress logs after 7 days)
+  - [ ] 2.7 Add logging for authentication events (login, logout, API key validation)
+  - [ ] 2.8 Add logging for scan lifecycle (start, progress, completion, failure)
+  - [ ] 2.9 Add logging for API requests (endpoint, method, status code, duration)
+  - [ ] 2.10 Add logging for database operations (queries, errors)
+  - [ ] 2.11 Add logging for system events (startup, shutdown, health checks)
+  - [ ] 2.12 Implement data masking in logs (mask API keys, passwords, PII)
+  - [ ] 2.13 Implement OTEL-compliant telemetry (`TELEMETRY_ENABLED`, `OTEL_EXPORTER_TYPE`)
+  - [ ] 2.14 Store telemetry data locally in structured format alongside logs
+  - [ ] 2.15 Remove ZAP installation steps from `Dockerfile`
+  - [ ] 2.16 Remove ZAP-related environment variables from `docker-compose.yml`
+  - [ ] 2.17 Make ZAP code optional in `modules/mcp/zap.py` (disable by default)
+  - [ ] 2.18 Remove ZAP references from `modules/mcp/scanner.py`
+  - [ ] 2.19 Create production Dockerfile (`Dockerfile.production`) without test files
+  - [ ] 2.20 Remove `tests/` directory from production container builds
+  - [ ] 2.21 Remove test dependencies (pytest, pytest-playwright) from production builds
+  - [ ] 2.22 Remove Playwright browser installation from production containers
+  - [ ] 2.23 Update `.dockerignore` to exclude test files
+  - [ ] 2.24 Document container size reduction in README
+  - [ ] 2.25 Implement container protection for production (build-time access key)
+  - [ ] 2.26 Add container access key configuration in `Dockerfile.protected`
+  - [ ] 2.27 Document container protection mechanism and access procedures
+
+- [ ] 3.0 Multi-Tenancy & User Management
+  - [ ] 3.1 Create `Tenant` model in `models.py` (id, name, created_at, is_active, settings)
+  - [ ] 3.2 Create `User` model in `models.py` (id, email, password_hash, name, tenant_id, role, created_at, is_active, mfa_enabled, mfa_secret)
+  - [ ] 3.3 Create `TenantSettings` model in `models.py` (id, tenant_id, setting_key, setting_value, updated_at, updated_by)
+  - [ ] 3.4 Create `AuditLog` model in `models.py` (id, tenant_id, user_id, action, resource_type, resource_id, details, ip_address, timestamp)
+  - [ ] 3.5 Add `tenant_id` column to `scans` table in `models.py`
+  - [ ] 3.6 Add `tenant_id` column to `findings` table in `models.py`
+  - [ ] 3.7 Add `tenant_id` column to `api_keys` table in `models.py`
+  - [ ] 3.8 Add `tenant_id` column to `baselines` table in `models.py`
+  - [ ] 3.9 Add `tenant_id` column to `sboms` table in `models.py`
+  - [ ] 3.10 Add database indexes on `tenant_id` columns for performance
+  - [ ] 3.11 Create tenant context middleware (`core/tenant_context.py`) to extract tenant from user/API key
+  - [ ] 3.12 Update all database queries to include tenant filter
+  - [ ] 3.13 Update all API endpoints to validate tenant access
+  - [ ] 3.14 Create user authentication module (`core/auth.py`) with email/password support
+  - [ ] 3.15 Implement password hashing using bcrypt or Argon2
+  - [ ] 3.16 Implement secure password policies (min 12 chars, complexity requirements)
+  - [ ] 3.17 Implement account lockout after failed login attempts
+  - [ ] 3.18 Create user registration endpoint (`POST /api/v1/users/register`)
+  - [ ] 3.19 Create user login endpoint (`POST /api/v1/users/login`)
+  - [ ] 3.20 Create user logout endpoint (`POST /api/v1/users/logout`)
+  - [ ] 3.21 Create user management endpoints (create, update, deactivate users)
+  - [ ] 3.22 Create tenant management endpoints (create, update, list tenants) for super admins
+  - [ ] 3.23 Create RBAC module (`core/rbac.py`) with role definitions (Super Admin, Tenant Admin, Viewer, Scanner)
+  - [ ] 3.24 Implement decorator-based role checking on API endpoints
+  - [ ] 3.25 Update API key authentication to associate keys with users (and tenants)
+  - [ ] 3.26 Implement session management (`core/session.py`) with 48-hour timeout
+  - [ ] 3.27 Store API key hash in session cookie with secure, signed cookies
+  - [ ] 3.28 Implement session refresh on activity
+  - [ ] 3.29 Create tenant selector/switcher UI component in header (`base.html`)
+  - [ ] 3.30 Create tenant management UI page (`tenants.html`) for super admins
+  - [ ] 3.31 Create user management UI page (`users.html`) with list, create, edit forms
+  - [ ] 3.32 Implement user deactivation (soft delete) functionality
+  - [ ] 3.33 Add role assignment interface in user management UI
+  - [ ] 3.34 Update all UI queries to scope data to current tenant
+  - [ ] 3.35 Display current tenant name in navigation
+
+- [ ] 4.0 Security & Data Protection
+  - [ ] 4.1 Create database sharding module (`core/sharding.py`) with schema-based or table-based strategy
+  - [ ] 4.2 Implement shard routing based on `tenant_id` hash or direct mapping
+  - [ ] 4.3 Create connection pooling with shard-aware routing
+  - [ ] 4.4 Implement shard management API for adding/removing shards
+  - [ ] 4.5 Store shard metadata securely (not in tenant-accessible tables)
+  - [ ] 4.6 Update database queries to automatically route to correct shard
+  - [ ] 4.7 Create encryption module (`core/encryption.py`) for encryption at rest
+  - [ ] 4.8 Implement AES-256 encryption for all tenant data
+  - [ ] 4.9 Create key management module (`core/key_management.py`) for tenant-specific encryption keys
+  - [ ] 4.10 Integrate with key management system (HashiCorp Vault, AWS KMS, or Azure Key Vault)
+  - [ ] 4.11 Implement transparent encryption/decryption for database operations
+  - [ ] 4.12 Implement key rotation mechanism without downtime
+  - [ ] 4.13 Ensure encryption keys are never stored in database or application code
+  - [ ] 4.14 Implement encrypted database backups
+  - [ ] 4.15 Add audit logging for key access
+  - [ ] 4.16 Implement MFA support using TOTP (Time-based One-Time Password) in `core/auth.py`
+  - [ ] 4.17 Add MFA setup endpoint (`POST /api/v1/users/mfa/setup`)
+  - [ ] 4.18 Add MFA verification endpoint (`POST /api/v1/users/mfa/verify`)
+  - [ ] 4.19 Implement password expiration and rotation policies
+  - [ ] 4.20 Implement secure session management (HTTP-only, secure cookies, SameSite)
+  - [ ] 4.21 Implement rate limiting (per API key, per IP, per tenant)
+  - [ ] 4.22 Add API key rotation and expiration policies
+  - [ ] 4.23 Implement request size limits and timeout limits
+  - [ ] 4.24 Add input validation and sanitization (prevent injection attacks)
+  - [ ] 4.25 Add output encoding (prevent XSS)
+  - [ ] 4.26 Configure CORS (restrict origins)
+  - [ ] 4.27 Add security headers (HSTS, X-Frame-Options, X-Content-Type-Options, CSP)
+  - [ ] 4.28 Implement CSRF protection (CSRF tokens, SameSite cookies)
+  - [ ] 4.29 Add comprehensive audit logging for all security-relevant events
+  - [ ] 4.30 Implement dependency vulnerability scanning in CI/CD
+  - [ ] 4.31 Add container image scanning (vulnerability scanning)
+  - [ ] 4.32 Implement secrets management (use secrets manager, never in code/env vars)
+
+- [ ] 5.0 Analytics, ML & Advanced Features
+  - [ ] 5.1 Create tenant settings service (`core/tenant_settings.py`) for managing tenant configurations
+  - [ ] 5.2 Implement policy settings (custom policy rules, gate thresholds, pass/fail criteria)
+  - [ ] 5.3 Implement scanner settings (enable/disable scanners, timeouts, configurations)
+  - [ ] 5.4 Implement severity settings (custom severity mappings, thresholds, actions)
+  - [ ] 5.5 Implement notification settings (alert thresholds, channels, preferences)
+  - [ ] 5.6 Implement scan settings (default scan parameters, schedules, retention policies)
+  - [ ] 5.7 Implement integration settings (webhook URLs, external tool configs)
+  - [ ] 5.8 Add settings validation using JSON schema
+  - [ ] 5.9 Add default settings for new tenants
+  - [ ] 5.10 Create tenant settings UI page (`tenant_settings.html`)
+  - [ ] 5.11 Create analytics engine (`core/analytics.py`) using pandas for data processing
+  - [ ] 5.12 Implement trend analysis (findings over time)
+  - [ ] 5.13 Implement severity distribution charts
+  - [ ] 5.14 Implement scanner effectiveness metrics
+  - [ ] 5.15 Implement remediation progress tracking
+  - [ ] 5.16 Implement risk scoring and prioritization
+  - [ ] 5.17 Add time range filtering for analytics (last 7 days, 30 days, 90 days, custom)
+  - [ ] 5.18 Ensure analytics are tenant-scoped (show only current tenant data)
+  - [ ] 5.19 Add analytics export functionality (CSV, JSON, PDF)
+  - [ ] 5.20 Create analytics dashboard UI page (`analytics.html`) with Chart.js
+  - [ ] 5.21 Create ML insights module (`core/ml_insights.py`) using scikit-learn
+  - [ ] 5.22 Implement anomaly detection using statistical methods (pre-trained models only)
+  - [ ] 5.23 Implement risk scoring based on finding patterns (pre-trained models only)
+  - [ ] 5.24 Implement finding correlation analysis (pre-trained models only)
+  - [ ] 5.25 Implement remediation recommendation prioritization (pre-trained models only)
+  - [ ] 5.26 Ensure ML models do NOT learn from customer data
+  - [ ] 5.27 Add ML insights panel to analytics dashboard (if ML features enabled)
+  - [ ] 5.28 Add feature flag to enable/disable ML features
+  - [ ] 5.29 Create documentation structure in `/docs` directory
+  - [ ] 5.30 Create getting started guide (`docs/getting-started/README.md`)
+  - [ ] 5.31 Create user guide (`docs/user-guide/README.md`)
+  - [ ] 5.32 Create API documentation (`docs/api/README.md`)
+  - [ ] 5.33 Create how-to guides (`docs/how-to/README.md`)
+  - [ ] 5.34 Create troubleshooting guide (`docs/troubleshooting/README.md`)
+  - [ ] 5.35 Create FAQ (`docs/faq/README.md`)
+  - [ ] 5.36 Create best practices guide (`docs/best-practices/README.md`)
+  - [ ] 5.37 Create glossary (`docs/glossary/README.md`)
+  - [ ] 5.38 Create documentation viewer page (`docs.html`) with markdown rendering
+  - [ ] 5.39 Implement markdown rendering with syntax highlighting (Prism.js or highlight.js)
+  - [ ] 5.40 Add table of contents navigation sidebar
+  - [ ] 5.41 Implement full-text search across documentation
+  - [ ] 5.42 Add "How To" link to main navigation in `base.html`
+  - [ ] 5.43 Ensure documentation is accessible (WCAG 2.1 AA compliant)
+  - [ ] 5.44 Add print-friendly CSS for documentation
+
+- [ ] 6.0 Unit Testing
+  - [ ] 6.1 Write unit tests for API key generation function (test format, length, randomness)
+  - [ ] 6.2 Write unit tests for session management (timeout, refresh, cookie signing)
+  - [ ] 6.3 Write unit tests for tenant context extraction from user/API key
+  - [ ] 6.4 Write unit tests for RBAC role checking decorators
+  - [ ] 6.5 Write unit tests for password hashing and validation
+  - [ ] 6.6 Write unit tests for MFA TOTP generation and verification
+  - [ ] 6.7 Write unit tests for encryption/decryption functions
+  - [ ] 6.8 Write unit tests for shard routing logic
+  - [ ] 6.9 Write unit tests for tenant settings validation
+  - [ ] 6.10 Write unit tests for analytics calculations (trends, distributions, metrics)
+  - [ ] 6.11 Write unit tests for ML insights functions (anomaly detection, risk scoring)
+  - [ ] 6.12 Write unit tests for logging functions (log formatting, masking, rotation)
+  - [ ] 6.13 Write unit tests for database models (Tenant, User, TenantSettings, AuditLog)
+  - [ ] 6.14 Write unit tests for API endpoints (all CRUD operations)
+  - [ ] 6.15 Write unit tests for data aggregation functions (findings aggregation)
+  - [ ] 6.16 Achieve minimum 80% code coverage for new code
+  - [ ] 6.17 Achieve 100% coverage for critical security functions
+  - [ ] 6.18 Set up pytest configuration in `conftest.py` with fixtures
+  - [ ] 6.19 Create test fixtures for tenants, users, API keys, scans, findings
+
+- [ ] 7.0 Integration Testing
+  - [ ] 7.1 Write integration tests for API endpoints with valid/invalid inputs
+  - [ ] 7.2 Write integration tests for authentication flow (register, login, logout)
+  - [ ] 7.3 Write integration tests for authorization (role-based access control)
+  - [ ] 7.4 Write integration tests for tenant isolation (verify cross-tenant data access prevention)
+  - [ ] 7.5 Write integration tests for error handling and error responses
+  - [ ] 7.6 Write integration tests for rate limiting
+  - [ ] 7.7 Write integration tests for database schema initialization
+  - [ ] 7.8 Write integration tests for shard routing (verify correct shard selection)
+  - [ ] 7.9 Write integration tests for encryption/decryption (verify data is encrypted at rest)
+  - [ ] 7.10 Write integration tests for data isolation between tenants
+  - [ ] 7.11 Write integration tests for transaction handling
+  - [ ] 7.12 Write integration tests for key management system integration (mock or staging)
+  - [ ] 7.13 Write integration tests for logging system integration
+  - [ ] 7.14 Write integration tests for session persistence across requests
+  - [ ] 7.15 Write integration tests for API key creation and usage flow
+  - [ ] 7.16 Write integration tests for user management workflows (create, update, deactivate)
+  - [ ] 7.17 Write integration tests for tenant settings (create, update, validation)
+  - [ ] 7.18 Write integration tests for analytics data aggregation
+  - [ ] 7.19 Write integration tests for scan execution with tenant context
+  - [ ] 7.20 Write integration tests for findings storage and retrieval with tenant isolation
+
+- [ ] 8.0 Performance Testing
+  - [ ] 8.1 Set up performance testing environment with production-like data
+  - [ ] 8.2 Write load tests for API endpoints (1000+ concurrent requests)
+  - [ ] 8.3 Write load tests for database queries under load
+  - [ ] 8.4 Write load tests for shard routing performance
+  - [ ] 8.5 Write load tests for encryption/decryption performance impact
+  - [ ] 8.6 Write stress tests for system limits (max tenants, max users, max scans)
+  - [ ] 8.7 Write stress tests for memory usage under stress
+  - [ ] 8.8 Write stress tests for CPU usage under stress
+  - [ ] 8.9 Write stress tests for database connection pooling
+  - [ ] 8.10 Measure and verify API response time <200ms (95th percentile)
+  - [ ] 8.11 Measure and verify database query time <100ms (95th percentile)
+  - [ ] 8.12 Measure and verify page load time <2 seconds
+  - [ ] 8.13 Measure and verify scan execution time within configured timeout
+  - [ ] 8.14 Test analytics dashboard performance with large datasets (10,000+ findings)
+  - [ ] 8.15 Test findings aggregation performance in application layer
+  - [ ] 8.16 Test pagination performance for large result sets
+  - [ ] 8.17 Test caching effectiveness for frequently accessed data
+  - [ ] 8.18 Document performance benchmarks and create performance test reports
+
+- [ ] 9.0 Security Testing
+  - [ ] 9.1 Write security tests for password policies (min length, complexity, expiration)
+  - [ ] 9.2 Write security tests for MFA implementation (TOTP generation, verification)
+  - [ ] 9.3 Write security tests for session management (timeout, secure cookies, SameSite)
+  - [ ] 9.4 Write security tests for role-based access control (verify unauthorized access is prevented)
+  - [ ] 9.5 Write security tests for API key validation (invalid keys, revoked keys)
+  - [ ] 9.6 Write security tests for SQL injection prevention (test with malicious inputs)
+  - [ ] 9.7 Write security tests for XSS prevention (test with script injection attempts)
+  - [ ] 9.8 Write security tests for CSRF protection (test CSRF token validation)
+  - [ ] 9.9 Write security tests for input validation (test with invalid, malformed inputs)
+  - [ ] 9.10 Write security tests for output encoding (verify XSS prevention)
+  - [ ] 9.11 Write security tests for encryption at rest (verify data is encrypted)
+  - [ ] 9.12 Write security tests for encryption in transit (verify TLS 1.3)
+  - [ ] 9.13 Write security tests for data masking in logs (verify sensitive data is masked)
+  - [ ] 9.14 Write security tests for secure data deletion (crypto-shredding)
+  - [ ] 9.15 Write security tests for tenant isolation (verify cross-tenant access prevention)
+  - [ ] 9.16 Write security tests for rate limiting (verify limits are enforced)
+  - [ ] 9.17 Write security tests for secrets management (verify secrets not in code/logs)
+  - [ ] 9.18 Perform dependency vulnerability scanning
+  - [ ] 9.19 Perform container image security scanning
+  - [ ] 9.20 Perform manual security audit of authentication and authorization flows
+  - [ ] 9.21 Document security test results and create security test reports
+
+- [ ] 10.0 Acceptance Testing
+  - [ ] 10.1 Create acceptance test plan based on user stories from PRD
+  - [ ] 10.2 Write acceptance tests for user story: "As a security analyst, I want to see all scan findings aggregated"
+  - [ ] 10.3 Write acceptance tests for user story: "As a platform administrator, I want comprehensive logging"
+  - [ ] 10.4 Write acceptance tests for user story: "As a DevOps engineer, I want smaller container images"
+  - [ ] 10.5 Write acceptance tests for user story: "As a developer, I want API keys with meaningful names"
+  - [ ] 10.6 Write acceptance tests for user story: "As a user, I want a modern, professional UI"
+  - [ ] 10.7 Write acceptance tests for user story: "As an organization administrator, I want to manage multiple tenants"
+  - [ ] 10.8 Write acceptance tests for user story: "As a platform administrator, I want to manage users and assign roles"
+  - [ ] 10.9 Write acceptance tests for user story: "As a security analyst, I want advanced analytics dashboards"
+  - [ ] 10.10 Write acceptance tests for user story: "As a tenant user, I want to see only my organization's data"
+  - [ ] 10.11 Write acceptance tests for user story: "As a tenant administrator, I want to configure tenant-specific settings"
+  - [ ] 10.12 Write acceptance tests for user story: "As a security officer, I want assurance that data is encrypted at rest"
+  - [ ] 10.13 Write acceptance tests for user story: "As a new user, I want comprehensive documentation"
+  - [ ] 10.14 Write end-to-end acceptance tests for complete user workflows
+  - [ ] 10.15 Write acceptance tests for multi-tenant scenarios (tenant isolation, cross-tenant prevention)
+  - [ ] 10.16 Write acceptance tests for analytics dashboards (trends, charts, exports)
+  - [ ] 10.17 Write acceptance tests for ML insights (anomaly detection, risk scoring)
+  - [ ] 10.18 Write acceptance tests for documentation viewer (navigation, search, rendering)
+  - [ ] 10.19 Validate all success metrics from PRD are met
+  - [ ] 10.20 Perform user acceptance testing with stakeholders
+  - [ ] 10.21 Document acceptance test results and create acceptance test reports
