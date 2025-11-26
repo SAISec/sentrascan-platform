@@ -55,6 +55,17 @@ Based on PRD: `prd-ui-redesign.md`
 - `tests/test_ui_realtime.py` - Real-time update functionality tests
 - `tests/test_ui_export.py` - Export functionality tests
 - `tests/test_ui_integration.py` - End-to-end UI integration tests
+- `tests/test_ui_performance.py` - Performance tests for Core Web Vitals (FCP, LCP, TTI, CLS)
+- `tests/test_ui_errors_empty.py` - Tests for error handling (404, 500, API errors) and empty states
+- `tests/test_ui_aria.py` - Tests for ARIA attributes implementation and accessibility compliance
+- `tests/test_ui_form_validation.py` - Tests for form validation and error message display
+- `tests/test_ui_modal_focus_esc.py` - Tests for modal focus trap and ESC key functionality
+- `tests/test_ui_mobile_navigation.py` - Tests for mobile navigation (hamburger menu, drawer, touch targets)
+- `tests/test_ui_progressive_enhancement.py` - Tests for progressive enhancement (functionality without JavaScript)
+- `tests/test_ui_toast_stacking.py` - Tests for toast notification stacking and auto-dismiss functionality
+- `tests/test_ui_chart_accessibility.py` - Tests for chart accessibility (keyboard navigation, ARIA labels)
+- `tests/README.md` - Comprehensive test documentation
+- `tests/TEST_COVERAGE_REPORT.md` - Test coverage report and metrics
 
 ### Notes
 
@@ -99,7 +110,7 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 2.17 Add export functionality for dashboard data (CSV, JSON)
   - [x] 2.18 Create backend endpoint for dashboard statistics (`/api/v1/dashboard/stats`)
 
-- [ ] 3.0 Scan Pages Enhancement (List, Detail, Forms)
+- [x] 3.0 Scan Pages Enhancement (List, Detail, Forms)
   - [x] 3.1 Enhance `index.html` (scan list) with modern table design and hover effects
   - [x] 3.2 Implement sortable table columns (Time, Type, Target, Status, Severity counts)
   - [x] 3.3 Add status badges with icons (completed, queued, running, failed)
@@ -127,7 +138,7 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 3.25 Implement loading states during form submission
   - [x] 3.26 Add redirect to scan detail page after successful submission
 
-- [ ] 4.0 Baselines & Comparison Features
+- [x] 4.0 Baselines & Comparison Features
   - [x] 4.1 Enhance `baselines.html` with modern table design
   - [x] 4.2 Implement sortable columns (Time, Type, Name, Hash, Active status)
   - [x] 4.3 Add action buttons (View, Compare, Delete if applicable)
@@ -146,7 +157,7 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 4.16 Create search/filter functionality within diff results
   - [x] 4.17 Add export functionality for baseline comparison (JSON, formatted text)
 
-- [ ] 5.0 Interactive Features & Accessibility (Real-time, Charts, Notifications, A11y)
+- [x] 5.0 Interactive Features & Accessibility (Real-time, Charts, Notifications, A11y)
   - [x] 5.1 Create modal/dialog component with focus trap and ESC key support
   - [x] 5.2 Implement confirmation dialogs for destructive actions
   - [x] 5.3 Create dropdown menu component with keyboard navigation
@@ -217,13 +228,13 @@ Based on PRD: `prd-ui-redesign.md`
   - [x] 6.18 Test export functionality (CSV, JSON exports)
   - [x] 6.19 Create end-to-end tests for critical user flows (login, trigger scan, view results)
   - [x] 6.20 Test cross-browser compatibility (Chrome, Firefox, Safari, Edge - last 2 versions)
-  - [ ] 6.21 Perform performance testing (FCP < 1.5s, LCP < 2.5s, TTI < 3.5s, CLS < 0.1)
-  - [ ] 6.22 Test error handling and empty states
-  - [ ] 6.23 Verify all ARIA attributes are correctly implemented
-  - [ ] 6.24 Test form validation and error messages
-  - [ ] 6.25 Test modal focus trap and ESC key functionality
-  - [ ] 6.26 Test mobile navigation (hamburger menu, drawer, touch targets)
-  - [ ] 6.27 Verify all interactive elements work without JavaScript (progressive enhancement)
-  - [ ] 6.28 Test toast notification stacking and auto-dismiss
-  - [ ] 6.29 Test chart accessibility (keyboard navigation, ARIA labels)
-  - [ ] 6.30 Create test documentation and test coverage report
+  - [x] 6.21 Perform performance testing (FCP < 1.5s, LCP < 2.5s, TTI < 3.5s, CLS < 0.1)
+  - [x] 6.22 Test error handling and empty states
+  - [x] 6.23 Verify all ARIA attributes are correctly implemented
+  - [x] 6.24 Test form validation and error messages
+  - [x] 6.25 Test modal focus trap and ESC key functionality
+  - [x] 6.26 Test mobile navigation (hamburger menu, drawer, touch targets)
+  - [x] 6.27 Verify all interactive elements work without JavaScript (progressive enhancement)
+  - [x] 6.28 Test toast notification stacking and auto-dismiss
+  - [x] 6.29 Test chart accessibility (keyboard navigation, ARIA labels)
+  - [x] 6.30 Create test documentation and test coverage report
