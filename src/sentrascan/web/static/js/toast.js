@@ -6,22 +6,39 @@
 (function() {
   'use strict';
 
-  const toastContainer = document.createElement('div');
-  toastContainer.id = 'toast-container';
-  toastContainer.setAttribute('aria-live', 'polite');
-  toastContainer.setAttribute('aria-atomic', 'false');
-  toastContainer.style.cssText = `
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: var(--z-index-tooltip);
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    max-width: 400px;
-    pointer-events: none;
-  `;
-  document.body.appendChild(toastContainer);
+  // Use existing container if present, otherwise create one
+  let toastContainer = document.getElementById('toast-container');
+  if (!toastContainer) {
+    toastContainer = document.createElement('div');
+    toastContainer.id = 'toast-container';
+    toastContainer.setAttribute('aria-live', 'polite');
+    toastContainer.setAttribute('aria-atomic', 'false');
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: var(--z-index-tooltip);
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+      max-width: 400px;
+      pointer-events: none;
+    `;
+    document.body.appendChild(toastContainer);
+  } else {
+    // Ensure existing container has proper styles
+    toastContainer.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: var(--z-index-tooltip);
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm);
+      max-width: 400px;
+      pointer-events: none;
+    `;
+  }
 
   let toastCount = 0;
 

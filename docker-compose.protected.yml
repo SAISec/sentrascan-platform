@@ -1,0 +1,76 @@
+# Protected docker-compose configuration
+# Usage: docker compose -f docker-compose.protected.yml up
+# 
+# Security features:
+# - Read-only filesystem (except data volumes)
+# - No new privileges
+# - Dropped capabilities
+# - No shell access (distroless image)
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.protected
+    image: sentrascan/platform:protected
+    command: sentrascan server --host 0.0.0.0 --port 8200
+    ports:
+      - "8200:8200"
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+      - MODELAUDIT_CACHE_DIR=/cache
+      # Optional: License key validation
+      # - SENTRASCAN_LICENSE_KEY=${LICENSE_KEY}
+    depends_on:
+      - db
+    volumes:
+      - ./data:/data
+      - ./reports:/reports
+      - ./sboms:/sboms
+      - ./cache:/cache
+    # Security hardening
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE  # Only needed if binding ports < 1024
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    # Health check
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/api/v1/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=sentrascan
+      - POSTGRES_USER=sentrascan
+      - POSTGRES_PASSWORD=changeme
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+

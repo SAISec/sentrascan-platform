@@ -45,23 +45,31 @@ RUN set -eux; \
     curl -fsSL -o /tmp/trufflehog.tgz "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_${th_arch}.tar.gz" && \
     tar -C /usr/local/bin -xzf /tmp/trufflehog.tgz trufflehog && chmod +x /usr/local/bin/trufflehog && rm -f /tmp/trufflehog.tgz
 
-# Copy source and wheels
-COPY . /app/
+# Copy dependency files first (for better layer caching)
+COPY pyproject.toml README.md /app/
 COPY --from=wheels /wheels /wheels
 
-# Install app, semgrep, MCP tools, and optional mcp client
+# Install base Python dependencies (without the package itself)
+# This layer will be cached unless dependencies change
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
- && pip install --no-cache-dir -e . \
  && pip install --no-cache-dir semgrep \
  && pip install --no-cache-dir /wheels/* \
- && (pip install --no-cache-dir 'mcp>=1.0.0' || true)
-
-# Install test dependencies (pytest, playwright)
-RUN pip install --no-cache-dir pytest pytest-playwright requests
+ && (pip install --no-cache-dir 'mcp>=1.0.0' || true) \
+ && pip install --no-cache-dir pytest pytest-playwright requests
 
 # Install Playwright browsers (required for UI tests)
+# This is separate so browser installs are cached
 RUN playwright install chromium \
- && playwright install-deps chromium || true
+ && playwright install-deps chromium
+
+# Copy source code (needed for editable install)
+# This layer rebuilds when code changes, but dependencies above are cached
+COPY src/ /app/src/
+# Copy tests (for running tests in container)
+COPY tests/ /app/tests/
+
+# Install the package in editable mode (fast since dependencies are already installed)
+RUN pip install --no-cache-dir -e .
 
 # Create runtime dirs
 RUN mkdir -p /data /reports /sboms /cache

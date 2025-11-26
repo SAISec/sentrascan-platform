@@ -4,12 +4,13 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.requests import Request as StarletteRequest
 import json
 import asyncio
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # ensure available for type annotations
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from datetime import datetime, timedelta
 from sentrascan.core.storage import init_db, SessionLocal
 from sentrascan.modules.model.scanner import ModelScanner
@@ -46,7 +47,13 @@ def get_session_user(request: Request, db: Session = None):
     if not key:
         return None
     if db is None:
-        db = next(get_db())
+        # Create a temporary session and ensure it's closed
+        db = SessionLocal()
+        try:
+            rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(key), APIKey.is_revoked == False).first()
+            return rec
+        finally:
+            db.close()
     rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(key), APIKey.is_revoked == False).first()
     return rec
 
@@ -59,6 +66,10 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_db_session():
+    """Get a database session that must be explicitly closed."""
+    return SessionLocal()
 
 def require_api_key(x_api_key: str | None = Header(default=None), db: Session = Depends(get_db)):
     # Allow unauthenticated health
@@ -79,6 +90,56 @@ static_dir = os.path.join(os.path.dirname(__file__), "web", "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Exception handlers for error pages
+@app.exception_handler(404)
+async def not_found_handler(request: StarletteRequest, exc: StarletteHTTPException):
+    """Handle 404 errors with custom error page."""
+    # Only render HTML for UI routes, return JSON for API routes
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=404,
+            content={"error": "Not found", "detail": str(exc.detail) if hasattr(exc, 'detail') else "Resource not found"}
+        )
+    # Render 404 template for UI routes
+    try:
+        user = get_session_user(request)
+        return templates.TemplateResponse(
+            "errors/404.html",
+            {"request": request, "user": user},
+            status_code=404
+        )
+    except Exception:
+        # Fallback if template rendering fails
+        return templates.TemplateResponse(
+            "errors/404.html",
+            {"request": request, "user": None},
+            status_code=404
+        )
+
+@app.exception_handler(500)
+async def server_error_handler(request: StarletteRequest, exc: Exception):
+    """Handle 500 errors with custom error page."""
+    # Only render HTML for UI routes, return JSON for API routes
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Internal server error", "detail": "An unexpected error occurred"}
+        )
+    # Render 500 template for UI routes
+    try:
+        user = get_session_user(request)
+        return templates.TemplateResponse(
+            "errors/500.html",
+            {"request": request, "user": user},
+            status_code=500
+        )
+    except Exception:
+        # Fallback if template rendering fails
+        return templates.TemplateResponse(
+            "errors/500.html",
+            {"request": request, "user": None},
+            status_code=500
+        )
 
 @app.get("/api/v1/health")
 def health():
@@ -89,8 +150,11 @@ def scan_model(payload: dict, api_key=Depends(require_api_key), db: Session = De
     # RBAC: only admin can trigger scans
     if getattr(api_key, "role", "viewer") != "admin":
         raise HTTPException(403, "Insufficient role: admin required")
-    paths = payload.get("paths") or [payload.get("model_path")]
-    if not paths:
+    # Validate required fields
+    if not payload:
+        raise HTTPException(400, "Request body is required")
+    paths = payload.get("paths") or ([payload.get("model_path")] if payload.get("model_path") else None)
+    if not paths or (isinstance(paths, list) and len(paths) == 0):
         raise HTTPException(400, "paths or model_path is required")
     sbom = payload.get("generate_sbom")
     policy_path = payload.get("policy")
@@ -127,8 +191,9 @@ class JobRunner(Thread):
                 job = job_queue.get(timeout=0.5)
             except queue.Empty:
                 continue
+            db = None
             try:
-                db = next(get_db())
+                db = get_db_session()
                 if job["type"] == "model":
                     pe = PolicyEngine.default_model()
                     ms = ModelScanner(policy=pe)
@@ -143,6 +208,9 @@ class JobRunner(Thread):
                     job["on_done"](scan.id)
             except Exception:
                 pass
+            finally:
+                if db:
+                    db.close()
 
 runner = JobRunner(daemon=True)
 
@@ -303,95 +371,102 @@ def compare_baselines(payload: dict, api_key=Depends(require_api_key), db: Sessi
         else:
             diffs.append({"path": path, "change": "changed", "from": a, "to": b})
         return diffs
-    return {"diff": deep_diff(l.content or {}, r.content or {})}
+    result = {"diff": deep_diff(l.content or {}, r.content or {})}
+    return result
 
 @app.get("/baselines")
 def ui_baselines(request: Request, sort: str | None = None, order: str | None = None):
-    db = next(get_db())
-    q = db.query(Baseline)
-    
-    # Apply sorting
-    sort_order = order if order in ('asc', 'desc') else 'desc'
-    if sort == 'time':
-        q = q.order_by(Baseline.created_at.desc() if sort_order == 'desc' else Baseline.created_at.asc())
-    elif sort == 'type':
-        q = q.order_by(Baseline.baseline_type.desc() if sort_order == 'desc' else Baseline.baseline_type.asc())
-    elif sort == 'name':
-        q = q.order_by(Baseline.name.desc() if sort_order == 'desc' else Baseline.name.asc())
-    elif sort == 'hash':
-        q = q.order_by(Baseline.target_hash.desc() if sort_order == 'desc' else Baseline.target_hash.asc())
-    elif sort == 'active':
-        q = q.order_by(Baseline.is_active.desc() if sort_order == 'desc' else Baseline.is_active.asc())
-    else:
-        # Default sort by time descending
-        q = q.order_by(Baseline.created_at.desc())
-    
-    rows = q.limit(50).all()
-    breadcrumb_items = [
-        {"label": "Dashboard", "url": "/"},
-        {"label": "Baselines", "url": "/baselines"}
-    ]
-    return templates.TemplateResponse("baselines.html", {
-        "request": request, 
-        "baselines": rows,
-        "sort": sort or "",
-        "order": order or "desc",
-        "breadcrumb_items": breadcrumb_items
-    })
+    db = get_db_session()
+    try:
+        q = db.query(Baseline)
+        
+        # Apply sorting
+        sort_order = order if order in ('asc', 'desc') else 'desc'
+        if sort == 'time':
+            q = q.order_by(Baseline.created_at.desc() if sort_order == 'desc' else Baseline.created_at.asc())
+        elif sort == 'type':
+            q = q.order_by(Baseline.baseline_type.desc() if sort_order == 'desc' else Baseline.baseline_type.asc())
+        elif sort == 'name':
+            q = q.order_by(Baseline.name.desc() if sort_order == 'desc' else Baseline.name.asc())
+        elif sort == 'hash':
+            q = q.order_by(Baseline.target_hash.desc() if sort_order == 'desc' else Baseline.target_hash.asc())
+        elif sort == 'active':
+            q = q.order_by(Baseline.is_active.desc() if sort_order == 'desc' else Baseline.is_active.asc())
+        else:
+            # Default sort by time descending
+            q = q.order_by(Baseline.created_at.desc())
+        
+        rows = q.limit(50).all()
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Baselines", "url": "/baselines"}
+        ]
+        return templates.TemplateResponse("baselines.html", {
+            "request": request, 
+            "baselines": rows,
+            "sort": sort or "",
+            "order": order or "desc",
+            "breadcrumb_items": breadcrumb_items
+        })
+    finally:
+        db.close()
 
 @app.get("/baseline/compare")
 def ui_baseline_compare(left: str, right: str, request: Request):
-    db = next(get_db())
-    l = db.query(Baseline).filter(Baseline.id == left).first()
-    r = db.query(Baseline).filter(Baseline.id == right).first()
-    if not l or not r:
-        raise HTTPException(404, "Baseline not found")
-    
-    # Use the same deep_diff function as the API
-    def deep_diff(a, b, path=""):
-        diffs = []
-        if isinstance(a, dict) and isinstance(b, dict):
-            keys = set(a.keys()) | set(b.keys())
-            for k in sorted(keys):
-                p = f"{path}.{k}" if path else k
-                if k not in a:
-                    diffs.append({"path": p, "change": "added", "to": b[k]})
-                elif k not in b:
-                    diffs.append({"path": p, "change": "removed", "from": a[k]})
-                else:
-                    if a[k] != b[k]:
-                        diffs.extend(deep_diff(a[k], b[k], p))
-        elif isinstance(a, list) and isinstance(b, list):
-            la, lb = len(a), len(b)
-            n = max(la, lb)
-            for i in range(n):
-                p = f"{path}[{i}]"
-                if i >= la:
-                    diffs.append({"path": p, "change": "added", "to": b[i]})
-                elif i >= lb:
-                    diffs.append({"path": p, "change": "removed", "from": a[i]})
-                else:
-                    if a[i] != b[i]:
-                        diffs.extend(deep_diff(a[i], b[i], p))
-        else:
-            diffs.append({"path": path, "change": "changed", "from": a, "to": b})
-        return diffs
-    
-    diff_list = deep_diff(l.content or {}, r.content or {})
-    
-    breadcrumb_items = [
-        {"label": "Dashboard", "url": "/"},
-        {"label": "Baselines", "url": "/baselines"},
-        {"label": "Compare", "url": None}
-    ]
-    
-    return templates.TemplateResponse("baseline_compare.html", {
-        "request": request, 
-        "left": l, 
-        "right": r, 
-        "diff": diff_list,
-        "breadcrumb_items": breadcrumb_items
-    })
+    db = get_db_session()
+    try:
+        l = db.query(Baseline).filter(Baseline.id == left).first()
+        r = db.query(Baseline).filter(Baseline.id == right).first()
+        if not l or not r:
+            raise HTTPException(404, "Baseline not found")
+        
+        # Use the same deep_diff function as the API
+        def deep_diff(a, b, path=""):
+            diffs = []
+            if isinstance(a, dict) and isinstance(b, dict):
+                keys = set(a.keys()) | set(b.keys())
+                for k in sorted(keys):
+                    p = f"{path}.{k}" if path else k
+                    if k not in a:
+                        diffs.append({"path": p, "change": "added", "to": b[k]})
+                    elif k not in b:
+                        diffs.append({"path": p, "change": "removed", "from": a[k]})
+                    else:
+                        if a[k] != b[k]:
+                            diffs.extend(deep_diff(a[k], b[k], p))
+            elif isinstance(a, list) and isinstance(b, list):
+                la, lb = len(a), len(b)
+                n = max(la, lb)
+                for i in range(n):
+                    p = f"{path}[{i}]"
+                    if i >= la:
+                        diffs.append({"path": p, "change": "added", "to": b[i]})
+                    elif i >= lb:
+                        diffs.append({"path": p, "change": "removed", "from": a[i]})
+                    else:
+                        if a[i] != b[i]:
+                            diffs.extend(deep_diff(a[i], b[i], p))
+            else:
+                diffs.append({"path": path, "change": "changed", "from": a, "to": b})
+            return diffs
+        
+        diff_list = deep_diff(l.content or {}, r.content or {})
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Baselines", "url": "/baselines"},
+            {"label": "Compare", "url": None}
+        ]
+        
+        return templates.TemplateResponse("baseline_compare.html", {
+            "request": request, 
+            "left": l, 
+            "right": r, 
+            "diff": diff_list,
+            "breadcrumb_items": breadcrumb_items
+        })
+    finally:
+        db.close()
 
 # Scans API
 def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
@@ -630,13 +705,16 @@ def ui_login(request: Request):
 
 @app.post("/login")
 def ui_login_post(request: Request, response: Response, api_key: str = Form(...)):
-    db = next(get_db())
-    rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-    if not rec:
-        return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid API key"}, status_code=401)
-    resp = RedirectResponse(url="/", status_code=302)
-    resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
-    return resp
+    db = get_db_session()
+    try:
+        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
+        if not rec:
+            return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid API key"}, status_code=401)
+        resp = RedirectResponse(url="/", status_code=302)
+        resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
+        return resp
+    finally:
+        db.close()
 
 @app.get("/logout")
 def ui_logout():
@@ -646,124 +724,141 @@ def ui_logout():
 
 @app.get("/")
 def ui_home(request: Request, type: str | None = None, passed: str | None = None, time_range: str | None = None, date_from: str | None = None, date_to: str | None = None, search: str | None = None, sort: str | None = None, order: str | None = None, page: int = 1, page_size: int = 20):
-    db = next(get_db())
-    q = db.query(Scan)
-    
-    # Apply filters
-    if type:
-        q = q.filter(Scan.scan_type == type)
-    if passed in ("true","false"):
-        q = q.filter(Scan.passed == (passed == "true"))
-    
-    # Apply time range filter
-    if time_range:
-        now = datetime.utcnow()
-        if time_range == "7d":
-            cutoff = now - timedelta(days=7)
-        elif time_range == "30d":
-            cutoff = now - timedelta(days=30)
-        elif time_range == "90d":
-            cutoff = now - timedelta(days=90)
+    db = get_db_session()
+    try:
+        q = db.query(Scan)
+        
+        # Apply filters
+        if type:
+            q = q.filter(Scan.scan_type == type)
+        if passed in ("true","false"):
+            q = q.filter(Scan.passed == (passed == "true"))
+        
+        # Apply search filter
+        if search:
+            search_term = f"%{search}%"
+            q = q.filter(
+                or_(
+                    Scan.target_path.ilike(search_term),
+                    Scan.id.ilike(search_term),
+                    Scan.scan_type.ilike(search_term)
+                )
+            )
+        
+        # Apply time range filter
+        cutoff = None
+        if time_range:
+            now = datetime.utcnow()
+            if time_range == "7d":
+                cutoff = now - timedelta(days=7)
+            elif time_range == "30d":
+                cutoff = now - timedelta(days=30)
+            elif time_range == "90d":
+                cutoff = now - timedelta(days=90)
+            else:
+                cutoff = None
+            if cutoff:
+                q = q.filter(Scan.created_at >= cutoff)
+        
+        # Apply sorting
+        sort_order = order if order in ('asc', 'desc') else 'desc'
+        if sort == 'time':
+            q = q.order_by(Scan.created_at.desc() if sort_order == 'desc' else Scan.created_at.asc())
+        elif sort == 'type':
+            q = q.order_by(Scan.scan_type.desc() if sort_order == 'desc' else Scan.scan_type.asc())
+        elif sort == 'target':
+            q = q.order_by(Scan.target_path.desc() if sort_order == 'desc' else Scan.target_path.asc())
+        elif sort == 'status':
+            q = q.order_by(Scan.passed.desc() if sort_order == 'desc' else Scan.passed.asc())
+        elif sort == 'critical':
+            q = q.order_by(Scan.critical_count.desc() if sort_order == 'desc' else Scan.critical_count.asc())
+        elif sort == 'high':
+            q = q.order_by(Scan.high_count.desc() if sort_order == 'desc' else Scan.high_count.asc())
+        elif sort == 'medium':
+            q = q.order_by(Scan.medium_count.desc() if sort_order == 'desc' else Scan.medium_count.asc())
+        elif sort == 'low':
+            q = q.order_by(Scan.low_count.desc() if sort_order == 'desc' else Scan.low_count.asc())
         else:
-            cutoff = None
-        if cutoff:
-            q = q.filter(Scan.created_at >= cutoff)
-    
-    # Apply sorting
-    sort_order = order if order in ('asc', 'desc') else 'desc'
-    if sort == 'time':
-        q = q.order_by(Scan.created_at.desc() if sort_order == 'desc' else Scan.created_at.asc())
-    elif sort == 'type':
-        q = q.order_by(Scan.scan_type.desc() if sort_order == 'desc' else Scan.scan_type.asc())
-    elif sort == 'target':
-        q = q.order_by(Scan.target_path.desc() if sort_order == 'desc' else Scan.target_path.asc())
-    elif sort == 'status':
-        q = q.order_by(Scan.passed.desc() if sort_order == 'desc' else Scan.passed.asc())
-    elif sort == 'critical':
-        q = q.order_by(Scan.critical_count.desc() if sort_order == 'desc' else Scan.critical_count.asc())
-    elif sort == 'high':
-        q = q.order_by(Scan.high_count.desc() if sort_order == 'desc' else Scan.high_count.asc())
-    elif sort == 'medium':
-        q = q.order_by(Scan.medium_count.desc() if sort_order == 'desc' else Scan.medium_count.asc())
-    elif sort == 'low':
-        q = q.order_by(Scan.low_count.desc() if sort_order == 'desc' else Scan.low_count.asc())
-    else:
-        # Default sort by time descending
-        q = q.order_by(Scan.created_at.desc())
-    
-    page = max(page, 1)
-    page_size = min(max(page_size, 10), 100)  # Clamp between 10 and 100
-    total = q.count()
-    rows = q.limit(page_size).offset((page-1)*page_size).all()
-    
-    # Calculate statistics for dashboard
-    stats_q = db.query(Scan)
-    if type:
-        stats_q = stats_q.filter(Scan.scan_type == type)
-    if passed in ("true","false"):
-        stats_q = stats_q.filter(Scan.passed == (passed == "true"))
-    if time_range and cutoff:
-        stats_q = stats_q.filter(Scan.created_at >= cutoff)
-    
-    total_scans = stats_q.count()
-    passed_scans = stats_q.filter(Scan.passed == True).count()
-    total_findings = stats_q.with_entities(
-        func.sum(Scan.critical_count + Scan.high_count + Scan.medium_count + Scan.low_count)
-    ).scalar() or 0
-    critical_count = stats_q.with_entities(func.sum(Scan.critical_count)).scalar() or 0
-    high_count = stats_q.with_entities(func.sum(Scan.high_count)).scalar() or 0
-    medium_count = stats_q.with_entities(func.sum(Scan.medium_count)).scalar() or 0
-    low_count = stats_q.with_entities(func.sum(Scan.low_count)).scalar() or 0
-    
-    stats = {
-        "total_scans": total_scans,
-        "passed_scans": passed_scans,
-        "total_findings": int(total_findings),
-        "critical_count": int(critical_count),
-        "high_count": int(high_count),
-        "medium_count": int(medium_count),
-        "low_count": int(low_count),
-    }
-    
-    # Check if this is a dashboard request (no explicit page or sort params, or dashboard template requested)
-    use_dashboard = not sort and page == 1
-    
-    if use_dashboard:
-        return templates.TemplateResponse("dashboard.html", {
-            "request": request,
-            "scans": rows,
-            "page": page,
-            "has_next": (page*page_size) < total,
-            "filters": {
-                "type": type or "", 
-                "passed": passed or "", 
-                "time_range": time_range or "",
-                "date_from": date_from or "",
-                "date_to": date_to or "",
-                "search": search or ""
-            },
-            "stats": stats
-        })
-    else:
-        # Use index.html for scan list view
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "scans": rows,
-            "page": page,
-            "has_next": (page*page_size) < total,
-            "total": total,
-            "page_size": page_size,
-            "filters": {
-                "type": type or "", 
-                "passed": passed or "", 
-                "time_range": time_range or "",
-                "date_from": date_from or "",
-                "date_to": date_to or "",
-                "search": search or ""
-            },
-            "sort": sort or "",
-            "order": order or "desc"
-        })
+            # Default sort by time descending
+            q = q.order_by(Scan.created_at.desc())
+        
+        page = max(page, 1)
+        page_size = min(max(page_size, 10), 100)  # Clamp between 10 and 100
+        total = q.count()
+        rows = q.limit(page_size).offset((page-1)*page_size).all()
+        
+        # Calculate statistics for dashboard
+        stats_q = db.query(Scan)
+        if type:
+            stats_q = stats_q.filter(Scan.scan_type == type)
+        if passed in ("true","false"):
+            stats_q = stats_q.filter(Scan.passed == (passed == "true"))
+        if time_range and cutoff:
+            stats_q = stats_q.filter(Scan.created_at >= cutoff)
+        
+        total_scans = stats_q.count()
+        passed_scans = stats_q.filter(Scan.passed == True).count()
+        total_findings = stats_q.with_entities(
+            func.sum(Scan.critical_count + Scan.high_count + Scan.medium_count + Scan.low_count)
+        ).scalar() or 0
+        critical_count = stats_q.with_entities(func.sum(Scan.critical_count)).scalar() or 0
+        high_count = stats_q.with_entities(func.sum(Scan.high_count)).scalar() or 0
+        medium_count = stats_q.with_entities(func.sum(Scan.medium_count)).scalar() or 0
+        low_count = stats_q.with_entities(func.sum(Scan.low_count)).scalar() or 0
+        
+        stats = {
+            "total_scans": total_scans,
+            "passed_scans": passed_scans,
+            "total_findings": int(total_findings),
+            "critical_count": int(critical_count),
+            "high_count": int(high_count),
+            "medium_count": int(medium_count),
+            "low_count": int(low_count),
+        }
+        
+        # Check if this is a dashboard request (no explicit page or sort params, or dashboard template requested)
+        use_dashboard = not sort and page == 1
+        
+        if use_dashboard:
+            user = get_session_user(request, db)
+            return templates.TemplateResponse("dashboard.html", {
+                "request": request,
+                "user": user,
+                "scans": rows,
+                "page": page,
+                "has_next": (page*page_size) < total,
+                "filters": {
+                    "type": type or "", 
+                    "passed": passed or "", 
+                    "time_range": time_range or "",
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "search": search or ""
+                },
+                "stats": stats
+            })
+        else:
+            # Use index.html for scan list view
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "scans": rows,
+                "page": page,
+                "has_next": (page*page_size) < total,
+                "total": total,
+                "page_size": page_size,
+                "filters": {
+                    "type": type or "", 
+                    "passed": passed or "", 
+                    "time_range": time_range or "",
+                    "date_from": date_from or "",
+                    "date_to": date_to or "",
+                    "search": search or ""
+                },
+                "sort": sort or "",
+                "order": order or "desc"
+            })
+    finally:
+        db.close()
 
 @app.get("/ui/scan")
 def ui_scan_form(request: Request):
@@ -779,65 +874,71 @@ def ui_scan_form(request: Request):
 @app.post("/ui/scan/model")
 def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str = Form(...), strict: bool = Form(False), generate_sbom: bool = Form(True), policy: str | None = Form(None), run_async: bool = Form(False)):
     # prefer session user; fallback to form
-    db = next(get_db())
-    user = get_session_user(request, db)
-    rec = user
-    if not rec and api_key:
-        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-    if not rec or rec.role != "admin":
-        return RedirectResponse(url="/login", status_code=302)
-    pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_model()
-    ms = ModelScanner(policy=pe)
-    if run_async:
-        from sentrascan.core.models import Scan as ScanModel
-        scan = ScanModel(scan_type="model", target_path=model_path, scan_status="queued")
-        db.add(scan); db.commit()
-        def _done(scan_id: str):
-            pass
-        job_queue.put({
-            "type": "model",
-            "paths": [model_path],
-            "sbom_path": "./sboms/ui_sbom.json" if generate_sbom else None,
-            "strict": strict,
-            "timeout": 0,
-            "existing_scan_id": scan.id,
-            "on_done": _done,
-        })
-        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
-    else:
-        scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db)
-        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        rec = user
+        if not rec and api_key:
+            rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
+        if not rec or rec.role != "admin":
+            return RedirectResponse(url="/login", status_code=302)
+        pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_model()
+        ms = ModelScanner(policy=pe)
+        if run_async:
+            from sentrascan.core.models import Scan as ScanModel
+            scan = ScanModel(scan_type="model", target_path=model_path, scan_status="queued")
+            db.add(scan); db.commit()
+            def _done(scan_id: str):
+                pass
+            job_queue.put({
+                "type": "model",
+                "paths": [model_path],
+                "sbom_path": "./sboms/ui_sbom.json" if generate_sbom else None,
+                "strict": strict,
+                "timeout": 0,
+                "existing_scan_id": scan.id,
+                "on_done": _done,
+            })
+            return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+        else:
+            scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db)
+            return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+    finally:
+        db.close()
 
 @app.post("/ui/scan/mcp")
 def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool = Form(True), config_paths: str | None = Form(None), policy: str | None = Form(None), run_async: bool = Form(False)):
-    db = next(get_db())
-    user = get_session_user(request, db)
-    rec = user
-    if not rec and api_key:
-        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-    if not rec or rec.role != "admin":
-        return RedirectResponse(url="/login", status_code=302)
-    pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_mcp()
-    scanner = MCPScanner(policy=pe)
-    paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
-    if run_async:
-        from sentrascan.core.models import Scan as ScanModel
-        scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="queued")
-        db.add(scan); db.commit()
-        def _done(scan_id: str):
-            pass
-        job_queue.put({
-            "type": "mcp",
-            "config_paths": paths,
-            "auto_discover": auto_discover,
-            "timeout": 60,
-            "existing_scan_id": scan.id,
-            "on_done": _done,
-        })
-        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
-    else:
-        scan = scanner.scan(config_paths=paths, auto_discover=auto_discover, timeout=60, db=db)
-        return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        rec = user
+        if not rec and api_key:
+            rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
+        if not rec or rec.role != "admin":
+            return RedirectResponse(url="/login", status_code=302)
+        pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_mcp()
+        scanner = MCPScanner(policy=pe)
+        paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
+        if run_async:
+            from sentrascan.core.models import Scan as ScanModel
+            scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="queued")
+            db.add(scan); db.commit()
+            def _done(scan_id: str):
+                pass
+            job_queue.put({
+                "type": "mcp",
+                "config_paths": paths,
+                "auto_discover": auto_discover,
+                "timeout": 60,
+                "existing_scan_id": scan.id,
+                "on_done": _done,
+            })
+            return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+        else:
+            scan = scanner.scan(config_paths=paths, auto_discover=auto_discover, timeout=60, db=db)
+            return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
+    finally:
+        db.close()
 
 @app.get("/api/v1/scans/{scan_id}/findings/export")
 def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
@@ -889,31 +990,34 @@ def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session 
 
 @app.get("/scan/{scan_id}")
 def ui_scan_detail(scan_id: str, request: Request):
-    db = next(get_db())
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
-    findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
-    if not scan:
-        raise HTTPException(404, "Scan not found")
-    
-    # Get existing baseline for this scan if any
-    existing_baseline = db.query(Baseline).filter(Baseline.scan_id == scan_id).first()
-    
-    breadcrumb_items = [
-        {"label": "Dashboard", "url": "/"},
-        {"label": "Scans", "url": "/"},
-        {"label": f"Scan {scan_id[:8]}...", "url": f"/scan/{scan_id}"}
-    ]
-    
-    return templates.TemplateResponse(
-        "scan_detail.html",
-        {
-            "request": request, 
-            "scan": scan, 
-            "findings": findings,
-            "existing_baseline": existing_baseline,
-            "breadcrumb_items": breadcrumb_items
-        },
-    )
+    db = get_db_session()
+    try:
+        scan = db.query(Scan).filter(Scan.id == scan_id).first()
+        findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+        if not scan:
+            raise HTTPException(404, "Scan not found")
+        
+        # Get existing baseline for this scan if any
+        existing_baseline = db.query(Baseline).filter(Baseline.scan_id == scan_id).first()
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Scans", "url": "/"},
+            {"label": f"Scan {scan_id[:8]}...", "url": f"/scan/{scan_id}"}
+        ]
+        
+        return templates.TemplateResponse(
+            "scan_detail.html",
+            {
+                "request": request, 
+                "scan": scan, 
+                "findings": findings,
+                "existing_baseline": existing_baseline,
+                "breadcrumb_items": breadcrumb_items
+            },
+        )
+    finally:
+        db.close()
 
 @app.get("/api/v1/scans/{scan_id}/status/stream")
 async def stream_scan_status(scan_id: str, request: Request):
@@ -927,7 +1031,7 @@ async def stream_scan_status(scan_id: str, request: Request):
             if await request.is_disconnected():
                 break
             
-            db = next(get_db())
+            db = get_db_session()
             try:
                 scan = db.query(Scan).filter(Scan.id == scan_id).first()
                 if not scan:

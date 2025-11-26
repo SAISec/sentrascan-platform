@@ -270,8 +270,8 @@ function updatePageSize(size) {
     No scans found
   </p>
   <p style="color: var(--color-text-tertiary); margin-bottom: var(--spacing-lg);">
-    {% if filters.type or filters.passed %}
-      Try adjusting your filters or run a new scan.
+    {% if filters.type or filters.passed or filters.search %}
+      No scans match your search criteria. Try adjusting your filters or run a new scan.
     {% else %}
       Get started by running your first scan.
     {% endif %}

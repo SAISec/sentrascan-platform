@@ -1,0 +1,152 @@
+# Protected Dockerfile - Prevents source code inspection and shell access
+# Usage: docker build -f Dockerfile.protected -t sentrascan:protected .
+
+# ============================================
+# Stage 1: Build wheels for dependencies
+# ============================================
+FROM python:3.11-slim AS wheels
+WORKDIR /wheels
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ make && \
+    rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir wheel
+RUN pip wheel --no-cache-dir mcp-checkpoint cisco-ai-mcp-scanner -w /wheels
+
+# ============================================
+# Stage 2: Compile source to bytecode and install
+# ============================================
+FROM python:3.11-slim AS builder
+WORKDIR /build
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential curl ca-certificates tar gzip git git-lfs \
+    default-jre-headless libharfbuzz0b libfontconfig1 libfreetype6 && \
+    rm -rf /var/lib/apt/lists/* && \
+    git lfs install
+
+# Install Python dependencies
+COPY pyproject.toml README.md /build/
+COPY --from=wheels /wheels /wheels
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir semgrep && \
+    pip install --no-cache-dir /wheels/* && \
+    (pip install --no-cache-dir 'mcp>=1.0.0' || true) && \
+    pip install --no-cache-dir pytest pytest-playwright requests
+
+# Install Playwright browsers
+RUN playwright install chromium && \
+    playwright install-deps chromium || true
+
+# Install OWASP ZAP
+ARG ZAP_VERSION_UNDERSCORE=2_15_0
+ARG ZAP_VERSION_DOTTED=2.15.0
+RUN curl -fsSL -o /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh \
+    "https://github.com/zaproxy/zaproxy/releases/download/v${ZAP_VERSION_DOTTED}/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh" && \
+    chmod +x /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh && \
+    /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh -q -dir /opt/zap && \
+    ln -sf /opt/zap/zap-baseline.py /usr/local/bin/zap-baseline.py && \
+    ln -sf /opt/zap/zap.sh /usr/local/bin/zap.sh && \
+    rm -f /tmp/ZAP_${ZAP_VERSION_UNDERSCORE}_unix.sh
+
+# Install uv
+ENV PATH="/root/.local/bin:${PATH}"
+RUN curl -fsSL https://astral.sh/uv/install.sh | sh
+
+# Install gitleaks and trufflehog
+ARG GITLEAKS_VERSION=8.18.1
+ARG TRUFFLEHOG_VERSION=3.78.0
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    if [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ]; then \
+        gl_arch="linux_x64"; th_arch="linux_amd64"; \
+    elif [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; then \
+        gl_arch="linux_arm64"; th_arch="linux_arm64"; \
+    else \
+        gl_arch="linux_x64"; th_arch="linux_amd64"; \
+    fi && \
+    curl -fsSL -o /tmp/gitleaks.tgz \
+        "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_${gl_arch}.tar.gz" && \
+    tar -C /usr/local/bin -xzf /tmp/gitleaks.tgz gitleaks && \
+    chmod +x /usr/local/bin/gitleaks && \
+    rm -f /tmp/gitleaks.tgz && \
+    curl -fsSL -o /tmp/trufflehog.tgz \
+        "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_${th_arch}.tar.gz" && \
+    tar -C /usr/local/bin -xzf /tmp/trufflehog.tgz trufflehog && \
+    chmod +x /usr/local/bin/trufflehog && \
+    rm -f /tmp/trufflehog.tgz
+
+# Copy source code
+COPY src/ /build/src/
+
+# CRITICAL: Compile Python to bytecode and remove source files
+# This prevents customers from reading your source code
+# Note: Python requires .pyc files in __pycache__ directories for imports to work
+RUN python -m compileall -b /build/src && \
+    find /build/src -name "*.py" -type f -delete && \
+    find /build/src -type d -name "__pycache__" -exec chmod -R 755 {} \;
+
+# Install package (will use bytecode)
+RUN pip install --no-cache-dir -e .
+
+# Create runtime directories
+RUN mkdir -p /data /reports /sboms /cache
+
+# ============================================
+# Stage 3: Runtime - Distroless (NO SHELL, NO TOOLS)
+# ============================================
+FROM gcr.io/distroless/python3-debian12:nonroot
+WORKDIR /app
+
+# Copy Python packages and bytecode
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/lib/python3.11/site-packages \
+    /usr/local/lib/python3.11/site-packages
+
+# Copy Python binaries
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/bin/python* \
+    /usr/local/bin/
+
+# Copy sentrascan CLI entry point
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/bin/sentrascan \
+    /usr/local/bin/sentrascan
+
+# Copy compiled bytecode (NO SOURCE CODE)
+COPY --from=builder --chown=nonroot:nonroot \
+    /build/src \
+    /app/src
+
+# Copy system tools (ZAP, gitleaks, trufflehog)
+COPY --from=builder --chown=nonroot:nonroot \
+    /opt/zap \
+    /opt/zap
+
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/bin/gitleaks \
+    /usr/local/bin/trufflehog \
+    /usr/local/bin/
+
+# Copy uv if needed
+COPY --from=builder --chown=nonroot:nonroot \
+    /root/.local/bin/uv \
+    /usr/local/bin/uv || true
+
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/usr/local/bin:/opt/zap:${PATH}"
+ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+
+# Writable volumes (read-only filesystem except these)
+VOLUME ["/data", "/reports", "/sboms", "/cache"]
+
+EXPOSE 8200
+
+# Use non-root user (distroless default)
+USER nonroot
+
+# Entrypoint - NO SHELL AVAILABLE
+# Customers cannot run: docker exec -it container /bin/sh
+ENTRYPOINT ["/usr/bin/python3", "-m", "sentrascan.cli", "server", "--host", "0.0.0.0", "--port", "8200"]
+

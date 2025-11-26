@@ -67,13 +67,16 @@ help: ## Display this help message
 	@echo ""
 	@echo "Docker Operations:"
 	@echo "  make docker-build           - Build Docker image"
+	@echo "  make docker-build-fast      - Build with BuildKit (faster incremental builds)"
 	@echo "  make docker-build-multiarch - Build multi-architecture image"
 	@echo "  make docker-up              - Start docker-compose services"
+	@echo "  make docker-up-dev          - Start in dev mode (live code reloading, no rebuild)"
 	@echo "  make docker-down            - Stop docker-compose services"
 	@echo "  make docker-logs            - View docker-compose logs"
 	@echo "  make docker-clean           - Remove containers, volumes, images"
 	@echo "  make docker-shell           - Open shell in API container"
 	@echo "  make docker-test            - Run tests inside Docker container"
+	@echo "  make docker-test-dev        - Run tests in dev mode (with mounted code)"
 	@echo ""
 	@echo "Cloud Testing:"
 	@echo "  make test-cloud-ci     - Run tests in CI/CD context"
@@ -240,6 +243,10 @@ docker-build: ## Build Docker image
 	@echo "Building Docker image: $(IMAGE_TAG)"
 	docker build -t $(IMAGE_TAG) .
 
+docker-build-fast: ## Build Docker image with BuildKit cache (faster incremental builds)
+	@echo "Building Docker image with BuildKit: $(IMAGE_TAG)"
+	DOCKER_BUILDKIT=1 docker build -t $(IMAGE_TAG) .
+
 docker-build-multiarch: ## Build multi-architecture image
 	@echo "Building multi-architecture image: $(IMAGE_TAG)"
 	@if [ -z "$(PUSH)" ]; then \
@@ -254,6 +261,16 @@ docker-up: ## Start docker-compose services
 	@echo "Waiting for services to be ready..."
 	@sleep 5
 	@echo "Services started. API available at $(API_BASE)"
+	@echo "Run 'make db-init' to initialize the database (if not already done)"
+
+docker-up-dev: ## Start docker-compose services with dev overrides (live code reloading)
+	@echo "Starting docker-compose services in development mode..."
+	@echo "Code changes in src/ and tests/ will be reflected immediately (no rebuild needed)"
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml up -d
+	@echo "Waiting for services to be ready..."
+	@sleep 5
+	@echo "Services started in dev mode. API available at $(API_BASE)"
+	@echo "Source code is mounted as volumes - changes take effect immediately"
 	@echo "Run 'make db-init' to initialize the database (if not already done)"
 
 docker-down: ## Stop docker-compose services
@@ -286,6 +303,11 @@ docker-test: ## Run tests inside Docker container
 	@echo "Running tests inside Docker container..."
 	@echo "Note: Tests will connect to API at http://api:8200 (internal Docker network)"
 	$(DOCKER_COMPOSE) exec -e SENTRASCAN_API_BASE=http://api:8200 api pytest /app/$(TEST_DIR) -v
+
+docker-test-dev: ## Run tests in dev mode (uses mounted source code)
+	@echo "Running tests in development mode..."
+	@echo "Note: Tests will connect to API at http://api:8200 (internal Docker network)"
+	$(DOCKER_COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml exec -e SENTRASCAN_API_BASE=http://api:8200 api pytest /app/$(TEST_DIR) -v
 
 # ============================================================================
 # Cloud Testing

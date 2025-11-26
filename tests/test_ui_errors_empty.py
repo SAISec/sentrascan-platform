@@ -33,8 +33,12 @@ def test_404_error_page(page: Page, api_base):
     page.goto(f"{api_base}/nonexistent-page", wait_until="networkidle")
     
     # Check that 404 page is displayed
-    expect(page.locator("h1")).to_contain_text("404")
-    expect(page.locator("h2")).to_contain_text("Page Not Found")
+    # Use more specific selector - the error page h1 (not the header h1)
+    error_page = page.locator(".error-page, .error-content").first
+    expect(error_page).to_be_visible()
+    error_h1 = error_page.locator("h1").first
+    expect(error_h1).to_contain_text("404")
+    expect(error_page.locator("h2").first).to_contain_text("Page Not Found")
     expect(page.locator("text=The page you're looking for doesn't exist")).to_be_visible()
     
     # Check that navigation buttons are present
@@ -264,20 +268,18 @@ def test_empty_search_results(authenticated_page: Page, api_base):
     # Navigate to scan list
     authenticated_page.goto(f"{api_base}/", wait_until="networkidle")
     
-    # Perform a search that returns no results
-    search_input = authenticated_page.locator('input[type="text"][placeholder*="search" i], input[name*="search" i]')
+    # Set desktop viewport to ensure search input is visible
+    authenticated_page.set_viewport_size({"width": 1920, "height": 1080})
+    authenticated_page.reload(wait_until="networkidle")
     
-    if search_input.count() > 0:
-        search_input.first.fill("nonexistent-search-term-xyz123")
-        # Trigger search (might be on Enter or button click)
-        authenticated_page.keyboard.press("Enter")
-        authenticated_page.wait_for_timeout(1000)
-        
-        # Check for empty state or "no results" message
-        empty_message = authenticated_page.locator("text=/no.*found|no results/i")
-        if empty_message.count() > 0:
-            # Empty search results are handled
-            pass
+    # Perform a search that returns no results
+    # Use URL parameter for search instead of form input (more reliable)
+    authenticated_page.goto(f"{api_base}/?search=nonexistent-search-term-xyz123", wait_until="networkidle")
+    
+    # Check for empty state or "no results" message
+    empty_message = authenticated_page.locator("text=/no.*found|no results|no scans/i")
+    empty_state = authenticated_page.locator(".empty-state")
+    assert empty_message.count() > 0 or empty_state.count() > 0, "Should show empty state for search with no results"
 
 
 @pytest.mark.integration

@@ -473,10 +473,9 @@ def test_toast_container_exists(authenticated_page: Page, api_base):
     
     toast_container = authenticated_page.locator("#toast-container")
     
-    # Container should exist
-    expect(toast_container).to_be_visible()
-    
-    # Check ARIA attributes
+    # Container should exist (it may be hidden when empty, but should be in DOM)
+    assert toast_container.count() > 0, "Toast container should exist in DOM"
+    # Check that it has proper attributes even if not visible
     aria_live = toast_container.get_attribute("aria-live")
     assert aria_live == "polite", "Toast container should have aria-live='polite'"
     

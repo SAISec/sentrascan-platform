@@ -175,8 +175,9 @@ def test_forms_have_proper_structure_without_js(page: Page, api_base):
     """Test that forms have proper HTML structure without JavaScript."""
     page.goto(f"{api_base}/login", wait_until="networkidle")
     
-    form = page.locator("form")
-    expect(form).to_be_visible()
+    # Use more specific selector for login form
+    form = page.locator("form.login-form, form[action='/login']")
+    expect(form.first).to_be_visible()
     
     # Check for labels
     labels = page.locator("label")

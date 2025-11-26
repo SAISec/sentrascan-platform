@@ -1,0 +1,23 @@
+# Development override for docker-compose.yml
+# Use: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+# This enables live code reloading without rebuilding Docker image
+
+services:
+  api:
+    # Mount source code as volume for live reloading
+    volumes:
+      - ./src:/app/src:ro  # Read-only mount of source code
+      - ./tests:/app/tests:ro  # Read-only mount of tests
+      # Keep data volumes from base compose file
+      - ./data:/data
+      - ./reports:/reports
+      - ./sboms:/sboms
+      - ./cache:/cache
+    # Override command to enable auto-reload (if your server supports it)
+    # For FastAPI/uvicorn, you can use --reload flag
+    # command: sentrascan server --host 0.0.0.0 --port 8200 --reload
+    environment:
+      # Add development environment variables
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
