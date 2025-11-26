@@ -24,20 +24,42 @@ def admin_key(wait_api):
     env_key = os.environ.get("SENTRASCAN_ADMIN_KEY")
     if env_key:
         return env_key
-    cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-admin --role admin | tail -1' "]
-    out = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
-    assert out, "Failed to create admin key"
-    return out
+    # Check if running inside Docker (check for /app directory which is Docker WORKDIR)
+    if os.path.exists("/app"):
+        # Running inside Docker - use sentrascan CLI directly
+        out = subprocess.check_output(
+            ["sentrascan", "auth", "create", "--name", "test-admin", "--role", "admin"],
+            text=True, stderr=subprocess.STDOUT
+        ).strip()
+        # Extract key from output (last line)
+        key = out.split("\n")[-1].strip()
+    else:
+        # Running on host - use docker compose
+        cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-admin --role admin | tail -1' "]
+        key = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
+    assert key, "Failed to create admin key"
+    return key
 
 @pytest.fixture(scope="session")
 def viewer_key(wait_api):
     env_key = os.environ.get("SENTRASCAN_VIEWER_KEY")
     if env_key:
         return env_key
-    cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-viewer --role viewer | tail -1' "]
-    out = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
-    assert out, "Failed to create viewer key"
-    return out
+    # Check if running inside Docker
+    if os.path.exists("/app"):
+        # Running inside Docker - use sentrascan CLI directly
+        out = subprocess.check_output(
+            ["sentrascan", "auth", "create", "--name", "test-viewer", "--role", "viewer"],
+            text=True, stderr=subprocess.STDOUT
+        ).strip()
+        # Extract key from output (last line)
+        key = out.split("\n")[-1].strip()
+    else:
+        # Running on host - use docker compose
+        cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-viewer --role viewer | tail -1' "]
+        key = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
+    assert key, "Failed to create viewer key"
+    return key
 
 @pytest.fixture(scope="session")
 def api_base():

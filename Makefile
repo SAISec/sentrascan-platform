@@ -284,7 +284,8 @@ docker-shell: ## Open shell in API container
 
 docker-test: ## Run tests inside Docker container
 	@echo "Running tests inside Docker container..."
-	$(DOCKER_COMPOSE) exec api $(PYTEST) /app/$(TEST_DIR)
+	@echo "Note: Tests will connect to API at http://api:8200 (internal Docker network)"
+	$(DOCKER_COMPOSE) exec -e SENTRASCAN_API_BASE=http://api:8200 api pytest /app/$(TEST_DIR) -v
 
 # ============================================================================
 # Cloud Testing

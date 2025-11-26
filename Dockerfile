@@ -56,6 +56,13 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
  && pip install --no-cache-dir /wheels/* \
  && (pip install --no-cache-dir 'mcp>=1.0.0' || true)
 
+# Install test dependencies (pytest, playwright)
+RUN pip install --no-cache-dir pytest pytest-playwright requests
+
+# Install Playwright browsers (required for UI tests)
+RUN playwright install chromium \
+ && playwright install-deps chromium || true
+
 # Create runtime dirs
 RUN mkdir -p /data /reports /sboms /cache
 ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
