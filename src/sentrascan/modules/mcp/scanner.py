@@ -60,11 +60,11 @@ class MCPScanner:
                 paths.append(p)
         return list(dict.fromkeys(paths))
 
-    def scan(self, config_paths: List[str], auto_discover: bool, timeout: int, db):
+    def scan(self, config_paths: List[str], auto_discover: bool, timeout: int, db, tenant_id: Optional[str] = None):
         start = time.time()
         if auto_discover:
             config_paths = list(dict.fromkeys((config_paths or []) + self.auto_discover()))
-        scan = Scan(scan_type="mcp", target_path=",".join(config_paths or ["auto"]))
+        scan = Scan(scan_type="mcp", target_path=",".join(config_paths or ["auto"]), tenant_id=tenant_id)
         db.add(scan)
         db.flush()
         sev = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0}
@@ -127,7 +127,7 @@ class MCPScanner:
                 if key in sev:
                     sev[key] += 1
                 issue_types.append(iss.get("type") or "mcp_issue")
-                f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {})
+                f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
                 db.add(f)
             cp_ok = True
         except Exception:
@@ -161,7 +161,7 @@ class MCPScanner:
                 if key in sev:
                     sev[key] += 1
                 issue_types.append(iss.get("type") or "mcp_issue")
-                f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {})
+                f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
                 db.add(f)
         except Exception:
             pass
@@ -186,6 +186,7 @@ class MCPScanner:
                         location=rfind.get("location"),
                         evidence={"rule_id": rfind.get("rule_id")},
                         remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
+                        tenant_id=tenant_id,
                     ))
         except Exception:
             pass
@@ -211,6 +212,7 @@ class MCPScanner:
                             location=f"{sf.get('path')}:{sf.get('line')}",
                             evidence={"rule_id": sf.get("rule_id")},
                             remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
+                            tenant_id=tenant_id,
                         ))
         except Exception:
             pass
@@ -236,6 +238,7 @@ class MCPScanner:
                         location=pf.get("location"),
                         evidence={},
                         remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
+                        tenant_id=tenant_id,
                     ))
         except Exception:
             pass
@@ -272,6 +275,7 @@ class MCPScanner:
                                 location=rp,
                                 evidence={},
                                 remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
+                                tenant_id=tenant_id,
                             ))
         except Exception:
             pass
@@ -297,6 +301,7 @@ class MCPScanner:
                             description=s.get("description"),
                             location=s.get("location"),
                             evidence=s.get("evidence"),
+                            tenant_id=tenant_id,
                         ))
                 if gl.available():
                     for s in gl.run(rp):
@@ -314,6 +319,7 @@ class MCPScanner:
                             description=s.get("description"),
                             location=s.get("location"),
                             evidence=s.get("evidence"),
+                            tenant_id=tenant_id,
                         ))
         except Exception:
             pass

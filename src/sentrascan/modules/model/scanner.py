@@ -21,7 +21,7 @@ class ModelScanner:
         except FileNotFoundError:
             return False, "modelaudit CLI not found; install with `pip install modelaudit`"
 
-    def scan(self, paths: List[str], sbom_path: Optional[str], strict: bool, timeout: int, db):
+    def scan(self, paths: List[str], sbom_path: Optional[str], strict: bool, timeout: int, db, tenant_id: Optional[str] = None):
         start = time.time()
         tmp_report = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         tmp_report.close()
@@ -51,6 +51,7 @@ class ModelScanner:
             scan_type="model",
             target_path=",".join(paths),
             target_format=report.get("model_format") if isinstance(report, dict) else None,
+            tenant_id=tenant_id,
         )
         db.add(scan)
         db.flush()
@@ -67,6 +68,7 @@ class ModelScanner:
                     spec_version=sbom_json.get("specVersion"),
                     content=sbom_json,
                     hash=None,
+                    tenant_id=tenant_id,
                 )
                 db.add(sb)
                 db.flush()
@@ -91,6 +93,7 @@ class ModelScanner:
                 location=iss.get("location") or None,
                 evidence=iss.get("evidence") or iss.get("data") or {},
                 remediation=iss.get("remediation") or "",
+                tenant_id=tenant_id,
             )
             db.add(f)
         scan.duration_ms = int((time.time() - start) * 1000)

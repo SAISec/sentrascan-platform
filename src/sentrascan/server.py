@@ -22,6 +22,24 @@ from sentrascan.core.masking import mask_dict, mask_api_key
 from sentrascan.core.telemetry import get_telemetry, initialize_telemetry
 from sentrascan.core.container_protection import check_container_access
 from sentrascan.core.log_retention import archive_old_logs, archive_telemetry
+from sentrascan.core.tenant_context import (
+    get_tenant_id, set_tenant_id, extract_tenant_from_request,
+    require_tenant, validate_tenant_access, TenantContextMiddleware
+)
+from sentrascan.core.query_helpers import filter_by_tenant, require_tenant_for_query
+from sentrascan.core.auth import (
+    authenticate_user, create_user, update_user_password,
+    deactivate_user, activate_user, PasswordPolicy
+)
+from sentrascan.core.rbac import (
+    require_role, require_permission, check_role, check_permission,
+    can_access_tenant, get_user_role, has_permission
+)
+from sentrascan.core.session import (
+    create_session, get_session_user as get_session_user_from_session,
+    refresh_session, invalidate_session, invalidate_user_sessions,
+    cleanup_expired_sessions, SESSION_COOKIE_NAME, sign as sign_session, unsign as unsign_session
+)
 import csv
 import io
 import secrets
@@ -110,42 +128,68 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             raise
 
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(TenantContextMiddleware)
 
-# Session auth (signed cookie)
-import hmac, hashlib, base64
-SESSION_COOKIE = os.environ.get("SENTRASCAN_SESSION_COOKIE", "ss_session")
-SECRET = os.environ.get("SENTRASCAN_SECRET", "dev-secret-change-me")
+# Session management - use module functions
+SESSION_COOKIE = SESSION_COOKIE_NAME  # Imported from session module
 
+# Legacy sign/unsign functions for backward compatibility
 def sign(val: str) -> str:
-    mac = hmac.new(SECRET.encode(), msg=val.encode(), digestmod=hashlib.sha256).hexdigest()
-    return f"{val}.{mac}"
+    """Legacy sign function - delegates to session module."""
+    return sign_session(val)
 
 def unsign(signed: str) -> str | None:
-    try:
-        val, mac = signed.rsplit(".", 1)
-        if hmac.compare_digest(hmac.new(SECRET.encode(), msg=val.encode(), digestmod=hashlib.sha256).hexdigest(), mac):
-            return val
-    except Exception:
-        pass
-    return None
+    """Legacy unsign function - delegates to session module."""
+    return unsign_session(signed)
 
 def get_session_user(request: Request, db: Session = None):
+    """
+    Get the authenticated user from session cookie.
+    Supports both APIKey (legacy) and User (new) authentication.
+    """
     cookie = request.cookies.get(SESSION_COOKIE)
     if not cookie:
         return None
-    key = unsign(cookie)
-    if not key:
+    signed_value = unsign(cookie)
+    if not signed_value:
         return None
+    
     if db is None:
         # Create a temporary session and ensure it's closed
         db = SessionLocal()
         try:
-            rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(key), APIKey.is_revoked == False).first()
-            return rec
+            return _get_user_from_session(signed_value, db)
         finally:
             db.close()
-    rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(key), APIKey.is_revoked == False).first()
-    return rec
+    return _get_user_from_session(signed_value, db)
+
+
+def _get_user_from_session(signed_cookie: str, db: Session):
+    """
+    Get user from session cookie (supports both APIKey and User).
+    Uses new session management for User sessions, legacy for APIKey.
+    """
+    # Try new session management first
+    user = get_session_user_from_session(signed_cookie, db)
+    if user:
+        return user
+    
+    # Legacy: Check if it's a user session (format: "user:{user_id}")
+    signed_value = unsign(signed_cookie)
+    if signed_value and signed_value.startswith("user:"):
+        user_id = signed_value.split(":", 1)[1]
+        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+        if user:
+            # Refresh session on activity
+            refresh_session(signed_cookie)
+            return user
+    
+    # Legacy: API key session
+    if signed_value:
+        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(signed_value), APIKey.is_revoked == False).first()
+        return rec
+    
+    return None
 
 # Simple API key and role enforcement (MVP)
 from sentrascan.core.models import APIKey, Scan, Finding, Baseline
@@ -194,12 +238,38 @@ def validate_api_key_format(api_key: str) -> bool:
     return True
 
 def require_api_key(x_api_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """
+    Require and validate API key authentication.
+    Returns APIKey object with tenant_id and user_id associations.
+    """
     # Allow unauthenticated health
     if x_api_key is None:
         raise HTTPException(401, "Missing API key")
-    rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(x_api_key), APIKey.is_revoked == False).first()
+    
+    rec = db.query(APIKey).filter(
+        APIKey.key_hash == APIKey.hash_key(x_api_key),
+        APIKey.is_revoked == False
+    ).first()
+    
     if not rec:
         raise HTTPException(403, "Invalid API key")
+    
+    # Check if associated tenant is active
+    if rec.tenant_id:
+        tenant = db.query(Tenant).filter(Tenant.id == rec.tenant_id).first()
+        if tenant and not tenant.is_active:
+            raise HTTPException(403, "Tenant is deactivated")
+    
+    # If API key has user_id, inherit role from user if user role is more permissive
+    if rec.user_id:
+        user = db.query(User).filter(User.id == rec.user_id, User.is_active == True).first()
+        if user:
+            # Inherit role from user (user role takes precedence)
+            rec.role = user.role
+            # Ensure tenant_id matches user's tenant
+            if user.tenant_id and not rec.tenant_id:
+                rec.tenant_id = user.tenant_id
+    
     return rec
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "web", "templates"))
 
@@ -268,26 +338,30 @@ def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/models/scans")
-def scan_model(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     # RBAC: only admin can trigger scans
-    if getattr(api_key, "role", "viewer") != "admin":
+    if not check_permission(api_key, "scan.create"):
         logger.warning(
             "scan_denied",
-            reason="insufficient_role",
-            required_role="admin",
-            user_role=getattr(api_key, "role", "unknown"),
+            reason="insufficient_permission",
+            required_permission="scan.create",
+            user_role=get_user_role(api_key),
             api_key_id=getattr(api_key, "id", None)
         )
-        raise HTTPException(403, "Insufficient role: admin required")
+        raise HTTPException(403, "Permission denied: scan.create required")
     # Validate required fields
     if not payload:
         logger.warning("scan_validation_failed", reason="missing_payload", api_key_id=getattr(api_key, "id", None))
         raise HTTPException(400, "Request body is required")
     paths = payload.get("paths") or ([payload.get("model_path")] if payload.get("model_path") else None)
     
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     logger.info(
         "model_scan_started",
         api_key_id=getattr(api_key, "id", None),
+        tenant_id=tenant_id,
         paths_count=len(paths) if paths else 0,
         payload_keys=list(payload.keys())
     )
@@ -298,7 +372,7 @@ def scan_model(payload: dict, api_key=Depends(require_api_key), db: Session = De
     pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_model()
     ms = ModelScanner(policy=pe)
     try:
-        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=payload.get("timeout", 0), db=db)
+        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=payload.get("timeout", 0), db=db, tenant_id=tenant_id)
         
         # Capture telemetry
         telemetry.capture_scan_event(
@@ -336,9 +410,9 @@ def scan_model(payload: dict, api_key=Depends(require_api_key), db: Session = De
         )
         raise
 @app.post("/api/v1/mcp/scans")
-def scan_mcp(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
-    # RBAC: only admin can trigger scans
-    if getattr(api_key, "role", "viewer") != "admin":
+def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+    # RBAC: require scan.create permission
+    if not check_permission(api_key, "scan.create"):
         logger.warning(
             "scan_denied",
             reason="insufficient_role",
@@ -351,9 +425,13 @@ def scan_mcp(payload: dict, api_key=Depends(require_api_key), db: Session = Depe
     configs = payload.get("config_paths") or []
     auto = bool(payload.get("auto_discover", False))
     
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     logger.info(
         "mcp_scan_started",
         api_key_id=getattr(api_key, "id", None),
+        tenant_id=tenant_id,
         config_paths_count=len(configs),
         auto_discover=auto,
         timeout=payload.get("timeout", 60)
@@ -363,7 +441,7 @@ def scan_mcp(payload: dict, api_key=Depends(require_api_key), db: Session = Depe
     pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_mcp()
     scanner = MCPScanner(policy=pe)
     try:
-        scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=payload.get("timeout", 60), db=db)
+        scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=payload.get("timeout", 60), db=db, tenant_id=tenant_id)
         logger.info(
             "mcp_scan_completed",
             scan_id=scan.id,
@@ -405,13 +483,15 @@ class JobRunner(Thread):
                     pe = PolicyEngine.default_model()
                     ms = ModelScanner(policy=pe)
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
-                    scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, existing_scan=existing)
+                    tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
+                    scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
                     job["on_done"](scan.id)
                 elif job["type"] == "mcp":
                     pe = PolicyEngine.default_mcp()
                     scanner = MCPScanner(policy=pe)
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
-                    scan = scanner.scan(config_paths=job.get("config_paths") or [], auto_discover=job.get("auto_discover", True), timeout=job.get("timeout", 60), db=db, existing_scan=existing)
+                    tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
+                    scan = scanner.scan(config_paths=job.get("config_paths") or [], auto_discover=job.get("auto_discover", True), timeout=job.get("timeout", 60), db=db, tenant_id=tenant_id)
                     job["on_done"](scan.id)
             except Exception:
                 pass
@@ -427,6 +507,21 @@ def on_startup():
     # start job runner
     if not runner.is_alive():
         runner.start()
+    
+    # Start background task for session cleanup
+    import threading
+    def cleanup_sessions_periodically():
+        import time
+        while True:
+            time.sleep(3600)  # Run every hour
+            try:
+                cleanup_expired_sessions()
+            except Exception as e:
+                logger.error("session_cleanup_failed", error=str(e), exc_info=True)
+    
+    cleanup_thread = threading.Thread(target=cleanup_sessions_periodically, daemon=True)
+    cleanup_thread.start()
+    logger.info("session_cleanup_started", interval_hours=1)
 
 # Baselines API
 @app.get("/api/v1/baselines")
@@ -505,9 +600,9 @@ def ui_create_baseline(request: Request, name: str = Form(...), description: str
 
 @app.post("/api/v1/baselines")
 def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
-    # RBAC: only admin can create
-    if getattr(api_key, "role", "viewer") != "admin":
-        raise HTTPException(403, "Insufficient role: admin required")
+    # RBAC: require scan.create permission (baselines are tied to scans)
+    if not check_permission(api_key, "scan.create"):
+        raise HTTPException(403, "Permission denied: scan.create required")
     required = ["baseline_type", "name", "content"]
     if not all(k in payload for k in required):
         raise HTTPException(400, "baseline_type, name, content required")
@@ -528,9 +623,18 @@ def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session
 
 @app.delete("/api/v1/baselines/{baseline_id}")
 def delete_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
-    # RBAC: only admin can delete
-    if getattr(api_key, "role", "viewer") != "admin":
-        raise HTTPException(403, "Insufficient role: admin required")
+    # RBAC: require scan.delete permission (baselines are tied to scans)
+    if not check_permission(api_key, "scan.delete"):
+        raise HTTPException(403, "Permission denied: scan.delete required")
+    
+    b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
+    if not b:
+        raise HTTPException(404, "Baseline not found")
+    if b.is_active:
+        raise HTTPException(400, "Cannot delete active baseline. Deactivate it first.")
+    db.delete(b)
+    db.commit()
+    return {"status": "deleted"}
     b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
     if not b:
         raise HTTPException(404, "Baseline not found")
@@ -585,7 +689,26 @@ def compare_baselines(payload: dict, api_key=Depends(require_api_key), db: Sessi
 def ui_baselines(request: Request, sort: str | None = None, order: str | None = None):
     db = get_db_session()
     try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant_id and filter queries
+        tenant_id = None
+        if isinstance(user, User):
+            tenant_id = user.tenant_id
+        elif hasattr(user, 'tenant_id'):
+            tenant_id = user.tenant_id
+        
+        if not tenant_id:
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
         q = db.query(Baseline)
+        # Filter by tenant_id
+        q = filter_by_tenant(q, Baseline, tenant_id)
         
         # Apply sorting
         sort_order = order if order in ('asc', 'desc') else 'desc'
@@ -604,12 +727,20 @@ def ui_baselines(request: Request, sort: str | None = None, order: str | None = 
             q = q.order_by(Baseline.created_at.desc())
         
         rows = q.limit(50).all()
+        
+        # Get tenant info for display
+        tenant = None
+        if tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        
         breadcrumb_items = [
             {"label": "Dashboard", "url": "/"},
             {"label": "Baselines", "url": "/baselines"}
         ]
         return templates.TemplateResponse("baselines.html", {
-            "request": request, 
+            "request": request,
+            "user": user,
+            "tenant": tenant,
             "baselines": rows,
             "sort": sort or "",
             "order": order or "desc",
@@ -622,8 +753,32 @@ def ui_baselines(request: Request, sort: str | None = None, order: str | None = 
 def ui_baseline_compare(left: str, right: str, request: Request):
     db = get_db_session()
     try:
-        l = db.query(Baseline).filter(Baseline.id == left).first()
-        r = db.query(Baseline).filter(Baseline.id == right).first()
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant_id for filtering
+        tenant_id = None
+        if isinstance(user, User):
+            tenant_id = user.tenant_id
+        elif hasattr(user, 'tenant_id'):
+            tenant_id = user.tenant_id
+        
+        if not tenant_id:
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
+        # Filter by tenant
+        q_l = db.query(Baseline).filter(Baseline.id == left)
+        q_l = filter_by_tenant(q_l, Baseline, tenant_id)
+        l = q_l.first()
+        
+        q_r = db.query(Baseline).filter(Baseline.id == right)
+        q_r = filter_by_tenant(q_r, Baseline, tenant_id)
+        r = q_r.first()
+        
         if not l or not r:
             raise HTTPException(404, "Baseline not found")
         
@@ -695,8 +850,13 @@ def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     ]
 
 @app.get("/api/v1/scans")
-def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, limit: int = 50, offset: int = 0):
+def list_scans(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, limit: int = 50, offset: int = 0):
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     q = db.query(Scan)
+    # Filter by tenant_id
+    q = filter_by_tenant(q, Scan, tenant_id)
     if type:
         q = q.filter(Scan.scan_type == type)
     if passed in ("true","false"):
@@ -718,9 +878,14 @@ def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db), 
     ]
 
 @app.get("/api/v1/dashboard/stats")
-def dashboard_stats(api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None):
-    """Get dashboard statistics"""
+def dashboard_stats(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None):
+    """Get dashboard statistics (tenant-scoped)"""
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     q = db.query(Scan)
+    # Filter by tenant_id
+    q = filter_by_tenant(q, Scan, tenant_id)
     
     # Apply filters
     if type:
@@ -764,9 +929,14 @@ def dashboard_stats(api_key=Depends(require_api_key), db: Session = Depends(get_
     }
 
 @app.get("/api/v1/dashboard/export")
-def dashboard_export(api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "json", type: str | None = None, passed: str | None = None, time_range: str | None = None):
-    """Export dashboard data as CSV or JSON"""
+def dashboard_export(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "json", type: str | None = None, passed: str | None = None, time_range: str | None = None):
+    """Export dashboard data as CSV or JSON (tenant-scoped)"""
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     q = db.query(Scan)
+    # Filter by tenant_id
+    q = filter_by_tenant(q, Scan, tenant_id)
     
     # Apply filters
     if type:
@@ -841,7 +1011,7 @@ def dashboard_export(api_key=Depends(require_api_key), db: Session = Depends(get
         }
 
 @app.get("/api/v1/scans/{scan_id}")
-def get_scan(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def get_scan(scan_id: str, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
     if not scan:
         raise HTTPException(404, "Scan not found")
@@ -947,6 +1117,70 @@ def ui_login_post(request: Request, response: Response, api_key: str = Form(...)
     finally:
         db.close()
 
+@app.get("/users")
+def ui_users(request: Request):
+    """User management page"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Check permission
+        if not check_permission(user, "user.read"):
+            raise HTTPException(403, "Permission denied")
+        
+        # Get tenant info
+        tenant = None
+        if hasattr(user, 'tenant_id') and user.tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "User Management", "url": "/users"}
+        ]
+        
+        return templates.TemplateResponse(
+            "users.html",
+            {
+                "request": request,
+                "user": user,
+                "tenant": tenant,
+                "breadcrumb_items": breadcrumb_items
+            }
+        )
+    finally:
+        db.close()
+
+@app.get("/tenants")
+def ui_tenants(request: Request):
+    """Tenant management page (super admin only)"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Check super_admin role
+        if not check_role(user, "super_admin"):
+            raise HTTPException(403, "Super admin access required")
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Tenant Management", "url": "/tenants"}
+        ]
+        
+        return templates.TemplateResponse(
+            "tenants.html",
+            {
+                "request": request,
+                "user": user,
+                "breadcrumb_items": breadcrumb_items
+            }
+        )
+    finally:
+        db.close()
+
 @app.get("/api-keys")
 def ui_api_keys(request: Request):
     """API Keys management page"""
@@ -992,14 +1226,36 @@ def ui_findings_aggregate(request: Request):
         
         offset = (page - 1) * page_size
         
-        # Get unique values for filter dropdowns
-        all_findings = db.query(Finding).all()
+        # Get tenant_id for filtering
+        tenant_id = None
+        if isinstance(user, User):
+            tenant_id = user.tenant_id
+        elif hasattr(user, 'tenant_id'):
+            tenant_id = user.tenant_id
+        
+        if not tenant_id:
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
+        # Get unique values for filter dropdowns (tenant-scoped)
+        q_findings = db.query(Finding)
+        q_findings = filter_by_tenant(q_findings, Finding, tenant_id)
+        all_findings = q_findings.all()
         categories = sorted(set(f.category for f in all_findings if f.category))
         scanners = sorted(set(f.scanner for f in all_findings if f.scanner))
         severities = ["critical", "high", "medium", "low"]
         
-        # Get scans for scan filter
-        scans = db.query(Scan).order_by(Scan.created_at.desc()).limit(100).all()
+        # Get scans for scan filter (tenant-scoped)
+        q_scans = db.query(Scan)
+        q_scans = filter_by_tenant(q_scans, Scan, tenant_id)
+        scans = q_scans.order_by(Scan.created_at.desc()).limit(100).all()
+        
+        # Get tenant info for display
+        tenant = None
+        if tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         
         breadcrumb_items = [
             {"label": "Dashboard", "url": "/"},
@@ -1010,6 +1266,8 @@ def ui_findings_aggregate(request: Request):
             "findings_aggregate.html",
             {
                 "request": request,
+                "user": user,
+                "tenant": tenant,
                 "breadcrumb_items": breadcrumb_items,
                 "categories": categories,
                 "scanners": scanners,
@@ -1042,7 +1300,26 @@ def ui_logout():
 def ui_home(request: Request, type: str | None = None, passed: str | None = None, time_range: str | None = None, date_from: str | None = None, date_to: str | None = None, search: str | None = None, sort: str | None = None, order: str | None = None, page: int = 1, page_size: int = 20):
     db = get_db_session()
     try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant_id and filter queries
+        tenant_id = None
+        if isinstance(user, User):
+            tenant_id = user.tenant_id
+        elif hasattr(user, 'tenant_id'):
+            tenant_id = user.tenant_id
+        
+        if not tenant_id:
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
         q = db.query(Scan)
+        # Filter by tenant_id
+        q = filter_by_tenant(q, Scan, tenant_id)
         
         # Apply filters
         if type:
@@ -1103,8 +1380,9 @@ def ui_home(request: Request, type: str | None = None, passed: str | None = None
         total = q.count()
         rows = q.limit(page_size).offset((page-1)*page_size).all()
         
-        # Calculate statistics for dashboard
+        # Calculate statistics for dashboard (tenant-scoped)
         stats_q = db.query(Scan)
+        stats_q = filter_by_tenant(stats_q, Scan, tenant_id)
         if type:
             stats_q = stats_q.filter(Scan.scan_type == type)
         if passed in ("true","false"):
@@ -1136,10 +1414,15 @@ def ui_home(request: Request, type: str | None = None, passed: str | None = None
         use_dashboard = not sort and page == 1
         
         if use_dashboard:
-            user = get_session_user(request, db)
+            # Get tenant info for display
+            tenant = None
+            if tenant_id:
+                tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+            
             return templates.TemplateResponse("dashboard.html", {
                 "request": request,
                 "user": user,
+                "tenant": tenant,
                 "scans": rows,
                 "page": page,
                 "has_next": (page*page_size) < total,
@@ -1178,14 +1461,34 @@ def ui_home(request: Request, type: str | None = None, passed: str | None = None
 
 @app.get("/ui/scan")
 def ui_scan_form(request: Request):
-    user = get_session_user(request)
-    if not user or user.role != "admin":
-        return RedirectResponse(url="/login", status_code=302)
-    breadcrumb_items = [
-        {"label": "Dashboard", "url": "/"},
-        {"label": "Run Scan", "url": "/ui/scan"}
-    ]
-    return templates.TemplateResponse("scan_forms.html", {"request": request, "user": user, "breadcrumb_items": breadcrumb_items})
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Check permission
+        if not check_permission(user, "scan.create"):
+            raise HTTPException(403, "Permission denied: scan.create required")
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Run Scan", "url": "/ui/scan"}
+        ]
+        
+        # Get tenant info for display
+        tenant = None
+        if hasattr(user, 'tenant_id') and user.tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        
+        return templates.TemplateResponse("scan_forms.html", {
+            "request": request,
+            "user": user,
+            "tenant": tenant,
+            "breadcrumb_items": breadcrumb_items
+        })
+    finally:
+        db.close()
 
 @app.post("/ui/scan/model")
 def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str = Form(...), strict: bool = Form(False), generate_sbom: bool = Form(True), policy: str | None = Form(None), run_async: bool = Form(False)):
@@ -1198,11 +1501,26 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
             rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
         if not rec or rec.role != "admin":
             return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant_id from user or API key
+        tenant_id = None
+        if hasattr(rec, 'tenant_id') and rec.tenant_id:
+            tenant_id = rec.tenant_id
+        elif isinstance(rec, APIKey) and hasattr(rec, 'tenant_id') and rec.tenant_id:
+            tenant_id = rec.tenant_id
+        
+        if not tenant_id:
+            # Try to extract from request
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
         pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_model()
         ms = ModelScanner(policy=pe)
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
-            scan = ScanModel(scan_type="model", target_path=model_path, scan_status="queued")
+            scan = ScanModel(scan_type="model", target_path=model_path, scan_status="queued", tenant_id=tenant_id)
             db.add(scan); db.commit()
             def _done(scan_id: str):
                 pass
@@ -1213,11 +1531,12 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
                 "strict": strict,
                 "timeout": 0,
                 "existing_scan_id": scan.id,
+                "tenant_id": tenant_id,
                 "on_done": _done,
             })
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
         else:
-            scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db)
+            scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db, tenant_id=tenant_id)
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
     finally:
         db.close()
@@ -1228,6 +1547,19 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
     try:
         user = get_session_user(request, db)
         rec = user
+        # Get tenant_id from user or API key
+        tenant_id = None
+        if hasattr(rec, 'tenant_id') and rec.tenant_id:
+            tenant_id = rec.tenant_id
+        elif isinstance(rec, APIKey) and hasattr(rec, 'tenant_id') and rec.tenant_id:
+            tenant_id = rec.tenant_id
+        
+        if not tenant_id:
+            # Try to extract from request
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
         if not rec and api_key:
             rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
         if not rec or rec.role != "admin":
@@ -1237,7 +1569,7 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
         paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
-            scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="queued")
+            scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="queued", tenant_id=tenant_id)
             db.add(scan); db.commit()
             def _done(scan_id: str):
                 pass
@@ -1247,18 +1579,20 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
                 "auto_discover": auto_discover,
                 "timeout": 60,
                 "existing_scan_id": scan.id,
+                "tenant_id": tenant_id,
                 "on_done": _done,
             })
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
         else:
-            scan = scanner.scan(config_paths=paths, auto_discover=auto_discover, timeout=60, db=db)
+            scan = scanner.scan(config_paths=paths, auto_discover=auto_discover, timeout=60, db=db, tenant_id=tenant_id)
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
     finally:
         db.close()
 
 @app.get("/api/v1/findings")
 def list_all_findings(
-    api_key=Depends(require_api_key), 
+    request: Request,
+    api_key=Depends(require_api_key),
     db: Session = Depends(get_db),
     severity: str | None = None,
     category: str | None = None,
@@ -1270,7 +1604,12 @@ def list_all_findings(
     order: str = "desc"
 ):
     """List all findings across all scans with filtering and pagination"""
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
     query = db.query(Finding).join(Scan)
+    # Filter by tenant_id
+    query = filter_by_tenant(query, Finding, tenant_id)
     
     # Apply filters
     if severity:
@@ -1334,13 +1673,20 @@ def list_all_findings(
     }
 
 @app.get("/api/v1/scans/{scan_id}/findings/export")
-def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
+def export_findings(scan_id: str, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
     """Export findings for a scan as CSV or JSON"""
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
+    q = db.query(Scan).filter(Scan.id == scan_id)
+    q = filter_by_tenant(q, Scan, tenant_id)
+    scan = q.first()
     if not scan:
         raise HTTPException(404, "Scan not found")
     
-    findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+    q = db.query(Finding).filter(Finding.scan_id == scan_id)
+    q = filter_by_tenant(q, Finding, tenant_id)
+    findings = q.all()
     
     if format == "csv":
         output = io.StringIO()
@@ -1385,10 +1731,34 @@ def export_findings(scan_id: str, api_key=Depends(require_api_key), db: Session 
 def ui_scan_detail(scan_id: str, request: Request):
     db = get_db_session()
     try:
-        scan = db.query(Scan).filter(Scan.id == scan_id).first()
-        findings = db.query(Finding).filter(Finding.scan_id == scan_id).all()
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant_id for filtering
+        tenant_id = None
+        if isinstance(user, User):
+            tenant_id = user.tenant_id
+        elif hasattr(user, 'tenant_id'):
+            tenant_id = user.tenant_id
+        
+        if not tenant_id:
+            tenant_id = extract_tenant_from_request(request, db)
+        
+        if not tenant_id:
+            return RedirectResponse(url="/login?error=tenant_required", status_code=302)
+        
+        # Filter by tenant
+        q_scan = db.query(Scan).filter(Scan.id == scan_id)
+        q_scan = filter_by_tenant(q_scan, Scan, tenant_id)
+        scan = q_scan.first()
+        
         if not scan:
             raise HTTPException(404, "Scan not found")
+        
+        q_findings = db.query(Finding).filter(Finding.scan_id == scan_id)
+        q_findings = filter_by_tenant(q_findings, Finding, tenant_id)
+        findings = q_findings.all()
         
         # Get existing baseline for this scan if any
         existing_baseline = db.query(Baseline).filter(Baseline.scan_id == scan_id).first()
@@ -1503,11 +1873,30 @@ def create_api_key(request: Request, name: str | None = Form(None), db: Session 
     """
     Create a new API key with optional name.
     Returns the generated API key (plaintext) and key metadata.
+    Associates the key with the current user and tenant.
     """
     # Check if user is authenticated (via session or API key)
     user = get_session_user(request, db)
-    if not user or user.role != "admin":
-        raise HTTPException(403, "Admin access required")
+    if not user or not check_permission(user, "api_key.create"):
+        raise HTTPException(403, "Permission denied: api_key.create required")
+    
+    # Get tenant_id from user
+    tenant_id = None
+    user_role = None
+    
+    if isinstance(user, User):
+        tenant_id = user.tenant_id
+        user_role = user.role
+    elif hasattr(user, 'tenant_id'):
+        tenant_id = user.tenant_id
+        user_role = getattr(user, 'role', 'viewer')
+    
+    # If no tenant_id, try to extract from request
+    if not tenant_id:
+        tenant_id = extract_tenant_from_request(request, db)
+    
+    if not tenant_id:
+        raise HTTPException(400, "Tenant context required to create API key")
     
     # Generate new API key
     new_key = generate_api_key()
@@ -1520,11 +1909,16 @@ def create_api_key(request: Request, name: str | None = Form(None), db: Session 
         new_key = generate_api_key()
         key_hash = APIKey.hash_key(new_key)
     
-    # Create API key record
+    # Determine role: inherit from user if available, otherwise default to viewer
+    api_key_role = user_role if user_role else "viewer"
+    
+    # Create API key record with user and tenant association
     api_key_record = APIKey(
         name=name,
         key_hash=key_hash,
-        role="viewer",  # Default role
+        role=api_key_role,
+        tenant_id=tenant_id,
+        user_id=user.id if isinstance(user, User) else None,
         is_revoked=False
     )
     db.add(api_key_record)
@@ -1556,17 +1950,38 @@ def create_api_key(request: Request, name: str | None = Form(None), db: Session 
 
 @app.get("/api/v1/api-keys")
 def list_api_keys(request: Request, db: Session = Depends(get_db)):
-    """List all API keys (metadata only, no plaintext keys)"""
+    """List all API keys (metadata only, no plaintext keys) - filtered by tenant"""
     user = get_session_user(request, db)
-    if not user or user.role != "admin":
-        raise HTTPException(403, "Admin access required")
+    if not user or not check_permission(user, "api_key.read"):
+        raise HTTPException(403, "Permission denied: api_key.read required")
     
-    keys = db.query(APIKey).filter(APIKey.is_revoked == False).order_by(APIKey.created_at.desc()).all()
+    # Get tenant_id from user or request
+    tenant_id = None
+    if isinstance(user, User):
+        tenant_id = user.tenant_id
+    elif hasattr(user, 'tenant_id'):
+        tenant_id = user.tenant_id
+    
+    if not tenant_id:
+        tenant_id = require_tenant(request, db)
+    
+    # Filter by tenant_id (unless super_admin)
+    q = db.query(APIKey).filter(APIKey.is_revoked == False)
+    if get_user_role(user) != "super_admin":
+        q = q.filter(APIKey.tenant_id == tenant_id)
+    
+    # If user is associated, also filter by user_id
+    if isinstance(user, User):
+        q = q.filter(APIKey.user_id == user.id)
+    
+    keys = q.order_by(APIKey.created_at.desc()).all()
     return [
         {
             "id": key.id,
             "name": key.name,
             "role": key.role,
+            "tenant_id": key.tenant_id,
+            "user_id": key.user_id,
             "created_at": key.created_at.isoformat() if key.created_at else None,
             "is_revoked": key.is_revoked
         }
@@ -1577,8 +1992,8 @@ def list_api_keys(request: Request, db: Session = Depends(get_db)):
 def revoke_api_key(key_id: str, request: Request, db: Session = Depends(get_db)):
     """Revoke an API key"""
     user = get_session_user(request, db)
-    if not user or user.role != "admin":
-        raise HTTPException(403, "Admin access required")
+    if not user or not check_permission(user, "api_key.delete"):
+        raise HTTPException(403, "Permission denied: api_key.delete required")
     
     key = db.query(APIKey).filter(APIKey.id == key_id).first()
     if not key:
@@ -1602,6 +2017,697 @@ def revoke_api_key(key_id: str, request: Request, db: Session = Depends(get_db))
     )
     
     return {"message": "API key revoked", "id": key_id}
+
+# User Authentication Endpoints
+@app.post("/api/v1/users/register")
+def register_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(...),
+    tenant_id: str = Form(None),
+    role: str = Form("viewer"),
+    db: Session = Depends(get_db)
+):
+    """
+    Register a new user.
+    Requires tenant_id (either from request context or provided).
+    """
+    # Get tenant_id from request context or form
+    if not tenant_id:
+        tenant_id = extract_tenant_from_request(request, db)
+    
+    if not tenant_id:
+        raise HTTPException(400, "tenant_id is required")
+    
+    # Validate tenant exists and is active
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.is_active == True).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found or inactive")
+    
+    try:
+        user = create_user(
+            db=db,
+            email=email,
+            password=password,
+            name=name,
+            tenant_id=tenant_id,
+            role=role
+        )
+        
+        # Capture telemetry
+        telemetry.capture_auth_event(
+            event_type="user_registered",
+            success=True,
+            user_id=user.id,
+            tenant_id=tenant_id
+        )
+        
+        return {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "tenant_id": user.tenant_id,
+            "role": user.role,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_registration_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Failed to create user")
+
+
+@app.post("/api/v1/users/login")
+def login_user(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Login a user with email and password.
+    Returns a session cookie.
+    """
+    try:
+        user = authenticate_user(db, email, password)
+        if not user:
+            raise HTTPException(401, "Invalid email or password")
+        
+        # Create session using session management module
+        signed_session = create_session(user, db)
+        
+        # Capture telemetry
+        telemetry.capture_auth_event(
+            event_type="login",
+            success=True,
+            user_id=user.id,
+            tenant_id=user.tenant_id
+        )
+        
+        response = JSONResponse({
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.name,
+                "tenant_id": user.tenant_id,
+                "role": user.role
+            }
+        })
+        
+        # Set session cookie with secure settings
+        from sentrascan.core.session import SESSION_TIMEOUT_HOURS
+        response.set_cookie(
+            SESSION_COOKIE,
+            signed_session,
+            httponly=True,
+            samesite="lax",
+            secure=os.environ.get("SENTRASCAN_COOKIE_SECURE", "false").lower() == "true",  # HTTPS only in production
+            max_age=SESSION_TIMEOUT_HOURS * 3600  # Configurable timeout
+        )
+        
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("login_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Login failed")
+
+
+@app.post("/api/v1/users/logout")
+def logout_user(request: Request, db: Session = Depends(get_db)):
+    """
+    Logout a user by clearing the session cookie.
+    """
+    # Capture telemetry before clearing session
+    user = get_session_user(request, db)
+    if user:
+        telemetry.capture_auth_event(
+            event_type="logout",
+            success=True,
+            user_id=user.id if hasattr(user, 'id') else None
+        )
+    
+    # Clear session cookie
+    response = JSONResponse({"message": "Logged out successfully"})
+    response.delete_cookie(SESSION_COOKIE, httponly=True, samesite="lax")
+    
+    return response
+
+
+# User Management Endpoints
+@app.get("/api/v1/users")
+def list_users(
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db),
+    tenant_id: str | None = None,
+    active_only: bool = True
+):
+    """
+    List users. Requires admin role.
+    Filters by tenant_id if provided, otherwise uses request tenant context.
+    """
+    # RBAC: require user.read permission
+    if not check_permission(api_key, "user.read"):
+        raise HTTPException(403, "Permission denied: user.read required")
+    
+    # Get tenant_id
+    if not tenant_id:
+        tenant_id = require_tenant(request, db)
+    
+    # Validate tenant access
+    user_tenant_id = getattr(api_key, "tenant_id", None)
+    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+        raise HTTPException(403, "Access denied to this tenant")
+    
+    # Query users
+    q = db.query(User).filter(User.tenant_id == tenant_id)
+    if active_only:
+        q = q.filter(User.is_active == True)
+    
+    users = q.all()
+    
+    return [
+        {
+            "id": u.id,
+            "email": u.email,
+            "name": u.name,
+            "role": u.role,
+            "is_active": u.is_active,
+            "created_at": u.created_at.isoformat() if u.created_at else None
+        }
+        for u in users
+    ]
+
+
+@app.post("/api/v1/users")
+def create_user_endpoint(
+    request: Request,
+    email: str = Form(...),
+    password: str = Form(...),
+    name: str = Form(...),
+    role: str = Form("viewer"),
+    tenant_id: str = Form(None),
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new user. Requires admin role.
+    """
+    # RBAC: require user.read permission
+    if not check_permission(api_key, "user.read"):
+        raise HTTPException(403, "Permission denied: user.read required")
+    
+    # Get tenant_id
+    if not tenant_id:
+        tenant_id = require_tenant(request, db)
+    
+    # Validate tenant access
+    user_tenant_id = getattr(api_key, "tenant_id", None)
+    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+        raise HTTPException(403, "Access denied to this tenant")
+    
+    try:
+        user = create_user(
+            db=db,
+            email=email,
+            password=password,
+            name=name,
+            tenant_id=tenant_id,
+            role=role
+        )
+        
+        # Capture telemetry
+        telemetry.capture_auth_event(
+            event_type="user_created",
+            success=True,
+            user_id=user.id,
+            tenant_id=tenant_id,
+            created_by=getattr(api_key, "id", None)
+        )
+        
+        return {
+            "id": user.id,
+            "email": user.email,
+            "name": user.name,
+            "tenant_id": user.tenant_id,
+            "role": user.role,
+            "created_at": user.created_at.isoformat() if user.created_at else None
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_creation_failed", error=str(e), exc_info=True)
+        raise HTTPException(500, "Failed to create user")
+
+
+@app.put("/api/v1/users/{user_id}")
+def update_user_endpoint(
+    user_id: str,
+    request: Request,
+    name: str = Form(None),
+    role: str = Form(None),
+    password: str = Form(None),
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a user. Requires admin role.
+    """
+    # RBAC: require user.read permission
+    if not check_permission(api_key, "user.read"):
+        raise HTTPException(403, "Permission denied: user.read required")
+    
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Validate tenant access
+    tenant_id = require_tenant(request, db)
+    user_tenant_id = getattr(api_key, "tenant_id", None)
+    if not validate_tenant_access(user.tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+        raise HTTPException(403, "Access denied to this user")
+    
+    # Update fields
+    if name is not None:
+        user.name = name
+    if role is not None:
+        user.role = role
+    if password is not None:
+        user = update_user_password(db, user, password)
+    
+    db.commit()
+    db.refresh(user)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="user_updated",
+        success=True,
+        user_id=user.id,
+        updated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "is_active": user.is_active
+    }
+
+
+@app.delete("/api/v1/users/{user_id}")
+def deactivate_user_endpoint(
+    user_id: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Deactivate a user (soft delete). Requires admin role.
+    """
+    # RBAC: require user.read permission
+    if not check_permission(api_key, "user.read"):
+        raise HTTPException(403, "Permission denied: user.read required")
+    
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Validate tenant access
+    tenant_id = require_tenant(request, db)
+    user_tenant_id = getattr(api_key, "tenant_id", None)
+    if not validate_tenant_access(user.tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+        raise HTTPException(403, "Access denied to this user")
+    
+    # Prevent deactivating yourself
+    if hasattr(api_key, 'user_id') and api_key.user_id == user_id:
+        raise HTTPException(400, "Cannot deactivate your own account")
+    
+    user = deactivate_user(db, user)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="user_deactivated",
+        success=True,
+        user_id=user.id,
+        deactivated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_active": False,
+        "message": "User deactivated"
+    }
+
+
+@app.post("/api/v1/users/{user_id}/activate")
+def activate_user_endpoint(
+    user_id: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Activate a user account. Requires admin role.
+    """
+    # RBAC: require user.read permission
+    if not check_permission(api_key, "user.read"):
+        raise HTTPException(403, "Permission denied: user.read required")
+    
+    # Get user
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Validate tenant access
+    tenant_id = require_tenant(request, db)
+    user_tenant_id = getattr(api_key, "tenant_id", None)
+    if not validate_tenant_access(user.tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+        raise HTTPException(403, "Access denied to this user")
+    
+    user = activate_user(db, user)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="user_activated",
+        success=True,
+        user_id=user.id,
+        activated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_active": True,
+        "message": "User activated"
+    }
+
+# Tenant Management Endpoints (Super Admin only)
+@app.get("/api/v1/tenants")
+def list_tenants(
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db),
+    active_only: bool = False
+):
+    """
+    List all tenants. Requires super_admin role.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    # Query tenants
+    q = db.query(Tenant)
+    if active_only:
+        q = q.filter(Tenant.is_active == True)
+    
+    tenants = q.order_by(Tenant.created_at.desc()).all()
+    
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "is_active": t.is_active,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "settings": t.settings or {}
+        }
+        for t in tenants
+    ]
+
+
+@app.post("/api/v1/tenants")
+def create_tenant(
+    request: Request,
+    name: str = Form(...),
+    settings: str = Form(None),  # JSON string
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new tenant. Requires super_admin role.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    # Check if tenant name already exists
+    existing = db.query(Tenant).filter(Tenant.name == name).first()
+    if existing:
+        raise HTTPException(409, "Tenant with this name already exists")
+    
+    # Parse settings if provided
+    tenant_settings = {}
+    if settings:
+        try:
+            tenant_settings = json.loads(settings)
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in settings field")
+    
+    # Create tenant
+    tenant = Tenant(
+        name=name,
+        is_active=True,
+        settings=tenant_settings
+    )
+    
+    db.add(tenant)
+    db.commit()
+    db.refresh(tenant)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="tenant_created",
+        success=True,
+        tenant_id=tenant.id,
+        created_by=getattr(api_key, "id", None)
+    )
+    
+    logger.info(
+        "tenant_created",
+        tenant_id=tenant.id,
+        tenant_name=name,
+        created_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "is_active": tenant.is_active,
+        "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        "settings": tenant.settings or {}
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_id}")
+def get_tenant(
+    tenant_id: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Get tenant details. Requires super_admin role.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    # Get user count
+    user_count = db.query(User).filter(User.tenant_id == tenant_id, User.is_active == True).count()
+    
+    # Get scan count
+    scan_count = db.query(Scan).filter(Scan.tenant_id == tenant_id).count()
+    
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "is_active": tenant.is_active,
+        "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        "settings": tenant.settings or {},
+        "stats": {
+            "user_count": user_count,
+            "scan_count": scan_count
+        }
+    }
+
+
+@app.put("/api/v1/tenants/{tenant_id}")
+def update_tenant(
+    tenant_id: str,
+    request: Request,
+    name: str = Form(None),
+    is_active: bool = Form(None),
+    settings: str = Form(None),  # JSON string
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a tenant. Requires super_admin role.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    # Update name if provided
+    if name is not None:
+        # Check if new name conflicts with existing tenant
+        existing = db.query(Tenant).filter(Tenant.name == name, Tenant.id != tenant_id).first()
+        if existing:
+            raise HTTPException(409, "Tenant with this name already exists")
+        tenant.name = name
+    
+    # Update is_active if provided
+    if is_active is not None:
+        tenant.is_active = is_active
+    
+    # Update settings if provided
+    if settings is not None:
+        try:
+            tenant_settings = json.loads(settings)
+            # Merge with existing settings
+            if tenant.settings:
+                tenant.settings.update(tenant_settings)
+            else:
+                tenant.settings = tenant_settings
+        except json.JSONDecodeError:
+            raise HTTPException(400, "Invalid JSON in settings field")
+    
+    db.commit()
+    db.refresh(tenant)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="tenant_updated",
+        success=True,
+        tenant_id=tenant.id,
+        updated_by=getattr(api_key, "id", None)
+    )
+    
+    logger.info(
+        "tenant_updated",
+        tenant_id=tenant.id,
+        updated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "is_active": tenant.is_active,
+        "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
+        "settings": tenant.settings or {}
+    }
+
+
+@app.delete("/api/v1/tenants/{tenant_id}")
+def deactivate_tenant(
+    tenant_id: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Deactivate a tenant (soft delete). Requires super_admin role.
+    This will also deactivate all users in the tenant.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    # Deactivate tenant
+    tenant.is_active = False
+    
+    # Deactivate all users in the tenant
+    users = db.query(User).filter(User.tenant_id == tenant_id).all()
+    for user in users:
+        user.is_active = False
+    
+    db.commit()
+    db.refresh(tenant)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="tenant_deactivated",
+        success=True,
+        tenant_id=tenant.id,
+        deactivated_by=getattr(api_key, "id", None),
+        users_deactivated=len(users)
+    )
+    
+    logger.info(
+        "tenant_deactivated",
+        tenant_id=tenant.id,
+        users_deactivated=len(users),
+        deactivated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "is_active": False,
+        "message": f"Tenant deactivated. {len(users)} users also deactivated."
+    }
+
+
+@app.post("/api/v1/tenants/{tenant_id}/activate")
+def activate_tenant(
+    tenant_id: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Activate a tenant. Requires super_admin role.
+    """
+    # RBAC: require super_admin role
+    if not check_role(api_key, "super_admin"):
+        raise HTTPException(403, "Super admin access required")
+    
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    tenant.is_active = True
+    db.commit()
+    db.refresh(tenant)
+    
+    # Capture telemetry
+    telemetry.capture_auth_event(
+        event_type="tenant_activated",
+        success=True,
+        tenant_id=tenant.id,
+        activated_by=getattr(api_key, "id", None)
+    )
+    
+    logger.info(
+        "tenant_activated",
+        tenant_id=tenant.id,
+        activated_by=getattr(api_key, "id", None)
+    )
+    
+    return {
+        "id": tenant.id,
+        "name": tenant.name,
+        "is_active": True,
+        "message": "Tenant activated"
+    }
 
 def run_server(host: str, port: int):
     import uvicorn

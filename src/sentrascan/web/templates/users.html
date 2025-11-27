@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - SentraScan Platform{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: var(--spacing-xl);">
+  <h1 style="margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">User Management</h1>
+  <p style="margin: var(--spacing-sm) 0 0 0; color: var(--color-text-secondary);">Manage users within your tenant</p>
+</div>
+
+{% include "components/_breadcrumb.html" %}
+
+<div class="users-container">
+  <!-- Action Bar -->
+  <div class="action-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
+    <div style="display: flex; gap: var(--spacing-sm);">
+      <button id="create-user-btn" class="btn btn-primary">
+        <span class="icon icon-plus" aria-hidden="true">+</span>
+        Create User
+      </button>
+    </div>
+  </div>
+
+  <!-- Users Table -->
+  <div class="table-container" style="background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); overflow: hidden;">
+    <table class="data-table" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="background: var(--color-bg-secondary); border-bottom: 2px solid var(--color-border-light);">
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Name</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Email</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Role</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Status</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Created</th>
+          <th style="padding: var(--spacing-md); text-align: right; font-weight: var(--font-weight-semibold);">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="users-table-body">
+        <tr>
+          <td colspan="6" style="padding: var(--spacing-xl); text-align: center; color: var(--color-text-secondary);">
+            Loading users...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create/Edit User Modal -->
+<div id="user-modal" class="modal" role="dialog" aria-labelledby="user-modal-title" aria-hidden="true" style="display: none;">
+  <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-header">
+      <h2 id="user-modal-title" style="margin: 0;">Create User</h2>
+      <button class="modal-close" aria-label="Close modal">&times;</button>
+    </div>
+    <form id="user-form" class="modal-body">
+      <input type="hidden" id="user-id" name="user_id">
+      
+      <div class="form-group">
+        <label for="user-name">Name <span class="required">*</span></label>
+        <input type="text" id="user-name" name="name" class="form-input" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="user-email">Email <span class="required">*</span></label>
+        <input type="email" id="user-email" name="email" class="form-input" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="user-password">Password <span class="required">*</span></label>
+        <input type="password" id="user-password" name="password" class="form-input" required>
+        <small style="color: var(--color-text-secondary); font-size: var(--font-size-xs);">
+          Minimum 12 characters with uppercase, lowercase, digits, and special characters
+        </small>
+      </div>
+      
+      <div class="form-group">
+        <label for="user-role">Role <span class="required">*</span></label>
+        <select id="user-role" name="role" class="form-select" required>
+          <option value="viewer">Viewer</option>
+          <option value="scanner">Scanner</option>
+          <option value="tenant_admin">Tenant Admin</option>
+          {% if user.role == 'super_admin' %}
+          <option value="super_admin">Super Admin</option>
+          {% endif %}
+        </select>
+      </div>
+      
+      <div class="form-actions" style="display: flex; justify-content: flex-end; gap: var(--spacing-sm); margin-top: var(--spacing-lg);">
+        <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<script src="/static/js/users.js" defer></script>
+{% endblock %}
+

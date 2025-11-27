@@ -73,6 +73,23 @@
         </ul>
       </nav>
 
+      <!-- Tenant Selector (if user has access to multiple tenants) -->
+      {% if user and user.role == 'super_admin' %}
+      <div class="tenant-selector" style="display: flex; align-items: center; gap: var(--spacing-sm); margin-right: var(--spacing-md);">
+        <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Tenant:</span>
+        <select id="tenant-selector" class="form-select form-select-sm" 
+                style="min-width: 150px; font-size: var(--font-size-sm);"
+                aria-label="Select tenant">
+          <option value="{{ tenant.id if tenant else '' }}" selected>{{ tenant.name if tenant else 'Select Tenant' }}</option>
+        </select>
+      </div>
+      {% elif tenant %}
+      <div class="tenant-display" style="display: flex; align-items: center; gap: var(--spacing-sm); margin-right: var(--spacing-md);">
+        <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Tenant:</span>
+        <span style="font-size: var(--font-size-sm); font-weight: var(--font-weight-medium); color: var(--color-text-primary);">{{ tenant.name }}</span>
+      </div>
+      {% endif %}
+
       <!-- User Menu (Desktop) -->
       <div class="user-menu-desktop" style="display: flex; align-items: center; gap: var(--spacing-md);">
         {% block user_menu %}
@@ -93,7 +110,32 @@
                  aria-hidden="true"
                  style="display: none; position: absolute; top: 100%; right: 0; margin-top: var(--spacing-xs); background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; z-index: var(--z-index-dropdown);">
               <ul style="list-style: none; margin: 0; padding: var(--spacing-xs);">
+                {% if user.role in ['super_admin', 'tenant_admin'] %}
                 <li>
+                  <a href="/users" 
+                     role="menuitem"
+                     style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">
+                    User Management
+                  </a>
+                </li>
+                {% endif %}
+                {% if user.role == 'super_admin' %}
+                <li>
+                  <a href="/tenants" 
+                     role="menuitem"
+                     style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">
+                    Tenant Management
+                  </a>
+                </li>
+                {% endif %}
+                <li>
+                  <a href="/api-keys" 
+                     role="menuitem"
+                     style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">
+                    API Keys
+                  </a>
+                </li>
+                <li style="border-top: 1px solid var(--color-border-light); margin-top: var(--spacing-xs); padding-top: var(--spacing-xs);">
                   <a href="/logout" 
                      role="menuitem"
                      style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-sm); transition: background-color var(--transition-fast);">

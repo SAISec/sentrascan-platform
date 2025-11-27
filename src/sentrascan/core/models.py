@@ -1,9 +1,79 @@
-from sqlalchemy import Column, String, Integer, Boolean, Text, JSON, TIMESTAMP, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, Text, JSON, TIMESTAMP, ForeignKey, Index
 from sqlalchemy.dialects.sqlite import BLOB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from sentrascan.core.storage import Base
 import uuid as _uuid
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+    id = Column(String, primary_key=True, default=lambda: str(_uuid.uuid4()))
+    name = Column(String, nullable=False, unique=True)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    settings = Column(JSON, default=dict)  # Tenant-specific settings
+    
+    # Relationships
+    users = relationship("User", backref="tenant", cascade="all, delete-orphan")
+    api_keys = relationship("APIKey", backref="tenant", cascade="all, delete-orphan")
+    scans = relationship("Scan", backref="tenant", cascade="all, delete-orphan")
+    findings = relationship("Finding", backref="tenant", cascade="all, delete-orphan")
+    baselines = relationship("Baseline", backref="tenant", cascade="all, delete-orphan")
+    sboms = relationship("SBOM", backref="tenant", cascade="all, delete-orphan")
+    tenant_settings = relationship("TenantSettings", backref="tenant", cascade="all, delete-orphan")
+    audit_logs = relationship("AuditLog", backref="tenant", cascade="all, delete-orphan")
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=lambda: str(_uuid.uuid4()))
+    email = Column(String, nullable=False, unique=True)
+    password_hash = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String, nullable=False, default="viewer")  # super_admin, tenant_admin, viewer, scanner
+    created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    mfa_enabled = Column(Boolean, default=False)
+    mfa_secret = Column(String, nullable=True)  # Encrypted MFA secret
+    
+    # Relationships
+    audit_logs = relationship("AuditLog", backref="user", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('idx_users_tenant_id', 'tenant_id'),
+        Index('idx_users_email', 'email'),
+    )
+
+class TenantSettings(Base):
+    __tablename__ = "tenant_settings"
+    id = Column(String, primary_key=True, default=lambda: str(_uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    setting_key = Column(String, nullable=False)
+    setting_value = Column(JSON, nullable=False)
+    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    
+    __table_args__ = (
+        Index('idx_tenant_settings_tenant_key', 'tenant_id', 'setting_key', unique=True),
+    )
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(String, primary_key=True, default=lambda: str(_uuid.uuid4()))
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String, nullable=False)  # create, update, delete, login, logout, etc.
+    resource_type = Column(String, nullable=False)  # scan, finding, user, tenant, etc.
+    resource_id = Column(String, nullable=True)
+    details = Column(JSON, default=dict)
+    ip_address = Column(String, nullable=True)
+    timestamp = Column(TIMESTAMP, default=datetime.utcnow)
+    
+    __table_args__ = (
+        Index('idx_audit_logs_tenant_id', 'tenant_id'),
+        Index('idx_audit_logs_user_id', 'user_id'),
+        Index('idx_audit_logs_timestamp', 'timestamp'),
+    )
 
 class Scan(Base):
     __tablename__ = "scans"
@@ -24,8 +94,13 @@ class Scan(Base):
     baseline_id = Column(String)
     sbom_id = Column(String)
     meta = Column(JSON)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     findings = relationship("Finding", backref="scan", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        Index('idx_scans_tenant_id', 'tenant_id'),
+    )
 
 class Finding(Base):
     __tablename__ = "findings"
@@ -40,6 +115,12 @@ class Finding(Base):
     location = Column(String)
     evidence = Column(JSON)
     remediation = Column(Text)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    __table_args__ = (
+        Index('idx_findings_tenant_id', 'tenant_id'),
+        Index('idx_findings_scan_id', 'scan_id'),
+    )
 
 class APIKey(Base):
     __tablename__ = "api_keys"
@@ -49,6 +130,13 @@ class APIKey(Base):
     key_hash = Column(String, unique=True)
     is_revoked = Column(Boolean, default=False)
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Optional: associate with user
+    
+    __table_args__ = (
+        Index('idx_api_keys_tenant_id', 'tenant_id'),
+        Index('idx_api_keys_user_id', 'user_id'),
+    )
 
     @staticmethod
     def hash_key(key: str) -> str:
@@ -83,6 +171,11 @@ class SBOM(Base):
     spec_version = Column(String)
     content = Column(JSON)
     hash = Column(String)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    __table_args__ = (
+        Index('idx_sboms_tenant_id', 'tenant_id'),
+    )
 
 class Baseline(Base):
     __tablename__ = "baselines"
@@ -98,3 +191,8 @@ class Baseline(Base):
     approved_by = Column(String)
     approval_date = Column(TIMESTAMP)
     is_active = Column(Boolean, default=True)
+    tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    
+    __table_args__ = (
+        Index('idx_baselines_tenant_id', 'tenant_id'),
+    )

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block title %}Tenant Management - SentraScan Platform{% endblock %}
+
+{% block content %}
+<div class="page-header" style="margin-bottom: var(--spacing-xl);">
+  <h1 style="margin: 0; font-size: var(--font-size-2xl); font-weight: var(--font-weight-bold);">Tenant Management</h1>
+  <p style="margin: var(--spacing-sm) 0 0 0; color: var(--color-text-secondary);">Manage tenants (Super Admin only)</p>
+</div>
+
+{% include "components/_breadcrumb.html" %}
+
+<div class="tenants-container">
+  <!-- Action Bar -->
+  <div class="action-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
+    <div style="display: flex; gap: var(--spacing-sm);">
+      <button id="create-tenant-btn" class="btn btn-primary">
+        <span class="icon icon-plus" aria-hidden="true">+</span>
+        Create Tenant
+      </button>
+    </div>
+  </div>
+
+  <!-- Tenants Table -->
+  <div class="table-container" style="background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); overflow: hidden;">
+    <table class="data-table" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="background: var(--color-bg-secondary); border-bottom: 2px solid var(--color-border-light);">
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Name</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Status</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Users</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Scans</th>
+          <th style="padding: var(--spacing-md); text-align: left; font-weight: var(--font-weight-semibold);">Created</th>
+          <th style="padding: var(--spacing-md); text-align: right; font-weight: var(--font-weight-semibold);">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tenants-table-body">
+        <tr>
+          <td colspan="6" style="padding: var(--spacing-xl); text-align: center; color: var(--color-text-secondary);">
+            Loading tenants...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Create/Edit Tenant Modal -->
+<div id="tenant-modal" class="modal" role="dialog" aria-labelledby="tenant-modal-title" aria-hidden="true" style="display: none;">
+  <div class="modal-content" style="max-width: 500px;">
+    <div class="modal-header">
+      <h2 id="tenant-modal-title" style="margin: 0;">Create Tenant</h2>
+      <button class="modal-close" aria-label="Close modal">&times;</button>
+    </div>
+    <form id="tenant-form" class="modal-body">
+      <input type="hidden" id="tenant-id" name="tenant_id">
+      
+      <div class="form-group">
+        <label for="tenant-name">Name <span class="required">*</span></label>
+        <input type="text" id="tenant-name" name="name" class="form-input" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="tenant-active">Status</label>
+        <label class="checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm);">
+          <input type="checkbox" id="tenant-active" name="is_active" checked>
+          <span>Active</span>
+        </label>
+      </div>
+      
+      <div class="form-actions" style="display: flex; justify-content: flex-end; gap: var(--spacing-sm); margin-top: var(--spacing-lg);">
+        <button type="button" class="btn btn-secondary modal-cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_head %}
+<script src="/static/js/tenants.js" defer></script>
+{% endblock %}
+
