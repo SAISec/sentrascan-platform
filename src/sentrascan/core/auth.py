@@ -26,6 +26,15 @@ except ImportError:
 from sentrascan.core.models import User
 from sentrascan.core.logging import get_logger
 
+try:
+    import pyotp
+    import qrcode
+    import io
+    import base64
+    HAS_MFA = True
+except ImportError:
+    HAS_MFA = False
+
 logger = get_logger(__name__)
 
 # Account lockout configuration
@@ -38,6 +47,10 @@ REQUIRE_UPPERCASE = True
 REQUIRE_LOWERCASE = True
 REQUIRE_DIGITS = True
 REQUIRE_SPECIAL = True
+
+# Password expiration configuration
+PASSWORD_EXPIRATION_DAYS = 90  # Passwords expire after 90 days
+PASSWORD_MIN_AGE_DAYS = 1  # Minimum 1 day before password can be changed
 
 
 class PasswordHasher:
@@ -322,7 +335,7 @@ def create_user(
     return user
 
 
-def update_user_password(db: Session, user: User, new_password: str) -> User:
+def update_user_password(db: Session, user: User, new_password: str, check_min_age: bool = True) -> User:
     """
     Update a user's password.
     Invalidates all existing sessions for security.
@@ -331,13 +344,18 @@ def update_user_password(db: Session, user: User, new_password: str) -> User:
         db: Database session.
         user: User object.
         new_password: New plaintext password (will be hashed).
+        check_min_age: If True, check minimum password age before allowing change.
     
     Returns:
         Updated User object.
     
     Raises:
-        HTTPException: If password validation fails.
+        HTTPException: If password validation fails or minimum age not met.
     """
+    # Check minimum age if required
+    if check_min_age and not check_password_min_age(user):
+        raise HTTPException(400, f"Password cannot be changed yet. Minimum age is {PASSWORD_MIN_AGE_DAYS} days.")
+    
     # Validate password
     is_valid, error_msg = PasswordPolicy.validate_password(new_password)
     if not is_valid:
@@ -346,6 +364,7 @@ def update_user_password(db: Session, user: User, new_password: str) -> User:
     # Hash new password
     hasher = PasswordHasher()
     user.password_hash = hasher.hash_password(new_password)
+    user.password_changed_at = datetime.utcnow()  # Track password change
     
     db.commit()
     db.refresh(user)
@@ -402,4 +421,46 @@ def activate_user(db: Session, user: User) -> User:
     logger.info("user_activated", user_id=user.id, email=user.email)
     
     return user
+
+
+def check_password_expiration(user: User) -> Tuple[bool, Optional[str]]:
+    """
+    Check if a user's password has expired.
+    
+    Args:
+        user: User object.
+    
+    Returns:
+        Tuple of (is_expired, expiration_message).
+        If password has expired, returns (True, message).
+        If password hasn't expired, returns (False, None).
+    """
+    if not user.password_changed_at:
+        # If password was never changed, consider it expired
+        return True, "Password has never been changed. Please set a new password."
+    
+    expiration_date = user.password_changed_at + timedelta(days=PASSWORD_EXPIRATION_DAYS)
+    if datetime.utcnow() > expiration_date:
+        days_expired = (datetime.utcnow() - expiration_date).days
+        return True, f"Password expired {days_expired} days ago. Please change your password."
+    
+    return False, None
+
+
+def check_password_min_age(user: User) -> bool:
+    """
+    Check if a user's password meets the minimum age requirement.
+    
+    Args:
+        user: User object.
+    
+    Returns:
+        True if password can be changed (meets minimum age), False otherwise.
+    """
+    if not user.password_changed_at:
+        # If password was never changed, allow change
+        return True
+    
+    min_age_date = user.password_changed_at + timedelta(days=PASSWORD_MIN_AGE_DAYS)
+    return datetime.utcnow() >= min_age_date
 

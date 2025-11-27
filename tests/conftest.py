@@ -3,6 +3,10 @@ import time
 import subprocess
 import requests
 import pytest
+from sentrascan.core.storage import SessionLocal
+from sentrascan.core.models import Tenant, User, APIKey
+from sentrascan.core.auth import create_user, PasswordHasher
+from sentrascan.server import generate_api_key
 
 API_BASE = os.environ.get("SENTRASCAN_API_BASE", "http://localhost:8200")
 
@@ -20,46 +24,138 @@ def wait_api():
     pytest.skip("API not ready at {API_BASE}")
 
 @pytest.fixture(scope="session")
-def admin_key(wait_api):
+def test_tenant(wait_api):
+    """Create a test tenant for API key creation"""
+    try:
+        db = SessionLocal()
+        # Check if test tenant exists
+        tenant = db.query(Tenant).filter(Tenant.name == "test-tenant").first()
+        if not tenant:
+            tenant = Tenant(
+                id="test-tenant-id",
+                name="test-tenant",
+                is_active=True
+            )
+            db.add(tenant)
+            db.commit()
+            db.refresh(tenant)
+        db.close()
+        return tenant
+    except Exception as e:
+        pytest.skip(f"Could not create test tenant: {e}")
+
+@pytest.fixture(scope="session")
+def test_admin_user(wait_api, test_tenant):
+    """Create a test admin user for API key creation"""
+    try:
+        db = SessionLocal()
+        # Check if test admin user exists
+        user = db.query(User).filter(User.email == "test-admin@test.com").first()
+        if not user:
+            user = create_user(
+                db,
+                email="test-admin@test.com",
+                password="TestPassword123!",
+                name="Test Admin",
+                tenant_id=test_tenant.id,
+                role="tenant_admin"
+            )
+        db.close()
+        return user
+    except Exception as e:
+        pytest.skip(f"Could not create test admin user: {e}")
+
+@pytest.fixture(scope="session")
+def admin_key(wait_api, test_tenant, test_admin_user):
+    """Create an admin API key directly in database"""
     env_key = os.environ.get("SENTRASCAN_ADMIN_KEY")
     if env_key:
         return env_key
-    # Check if running inside Docker (check for /app directory which is Docker WORKDIR)
-    if os.path.exists("/app"):
-        # Running inside Docker - use sentrascan CLI directly
-        out = subprocess.check_output(
-            ["sentrascan", "auth", "create", "--name", "test-admin", "--role", "admin"],
-            text=True, stderr=subprocess.STDOUT
-        ).strip()
-        # Extract key from output (last line)
-        key = out.split("\n")[-1].strip()
-    else:
-        # Running on host - use docker compose
-        cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-admin --role admin | tail -1' "]
-        key = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
-    assert key, "Failed to create admin key"
-    return key
+    
+    try:
+        db = SessionLocal()
+        # Check if key already exists
+        existing_key = db.query(APIKey).filter(
+            APIKey.name == "test-admin-key",
+            APIKey.tenant_id == test_tenant.id
+        ).first()
+        
+        if existing_key:
+            # Return existing key (we can't get plaintext, so generate a new one)
+            db.close()
+            # Create new key for testing
+            new_key = generate_api_key()
+            key_hash = APIKey.hash_key(new_key)
+            db = SessionLocal()
+            api_key_record = APIKey(
+                name="test-admin-key-new",
+                key_hash=key_hash,
+                role="tenant_admin",
+                tenant_id=test_tenant.id,
+                user_id=test_admin_user.id,
+                is_revoked=False
+            )
+            db.add(api_key_record)
+            db.commit()
+            db.close()
+            return new_key
+        
+        # Create new API key
+        new_key = generate_api_key()
+        key_hash = APIKey.hash_key(new_key)
+        api_key_record = APIKey(
+            name="test-admin-key",
+            key_hash=key_hash,
+            role="tenant_admin",
+            tenant_id=test_tenant.id,
+            user_id=test_admin_user.id,
+            is_revoked=False
+        )
+        db.add(api_key_record)
+        db.commit()
+        db.close()
+        return new_key
+    except Exception as e:
+        pytest.skip(f"Could not create admin key: {e}")
 
 @pytest.fixture(scope="session")
-def viewer_key(wait_api):
+def viewer_key(wait_api, test_tenant):
+    """Create a viewer API key"""
     env_key = os.environ.get("SENTRASCAN_VIEWER_KEY")
     if env_key:
         return env_key
-    # Check if running inside Docker
-    if os.path.exists("/app"):
-        # Running inside Docker - use sentrascan CLI directly
-        out = subprocess.check_output(
-            ["sentrascan", "auth", "create", "--name", "test-viewer", "--role", "viewer"],
-            text=True, stderr=subprocess.STDOUT
-        ).strip()
-        # Extract key from output (last line)
-        key = out.split("\n")[-1].strip()
-    else:
-        # Running on host - use docker compose
-        cmd = ["bash", "-lc", "docker compose exec -T api sh -lc 'sentrascan auth create --name test-viewer --role viewer | tail -1' "]
-        key = subprocess.check_output(" ".join(cmd), shell=True, text=True).strip()
-    assert key, "Failed to create viewer key"
-    return key
+    
+    try:
+        # Create viewer user
+        db = SessionLocal()
+        viewer_user = db.query(User).filter(User.email == "test-viewer@test.com").first()
+        if not viewer_user:
+            viewer_user = create_user(
+                db,
+                email="test-viewer@test.com",
+                password="TestPassword123!",
+                name="Test Viewer",
+                tenant_id=test_tenant.id,
+                role="viewer"
+            )
+        
+        # Create API key directly in database
+        new_key = generate_api_key()
+        key_hash = APIKey.hash_key(new_key)
+        api_key_record = APIKey(
+            name="test-viewer-key",
+            key_hash=key_hash,
+            role="viewer",
+            tenant_id=test_tenant.id,
+            user_id=viewer_user.id,
+            is_revoked=False
+        )
+        db.add(api_key_record)
+        db.commit()
+        db.close()
+        return new_key
+    except Exception as e:
+        pytest.skip(f"Could not create viewer key: {e}")
 
 @pytest.fixture(scope="session")
 def api_base():

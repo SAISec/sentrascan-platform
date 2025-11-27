@@ -9,6 +9,7 @@ from typing import Optional
 from contextvars import ContextVar
 from fastapi import Request, HTTPException
 from sqlalchemy.orm import Session
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Context variable to store tenant_id for the current request
 tenant_context: ContextVar[Optional[str]] = ContextVar('tenant_id', default=None)
@@ -153,12 +154,12 @@ def validate_tenant_access(tenant_id: str, user_tenant_id: Optional[str], user_r
     return False
 
 
-class TenantContextMiddleware:
+class TenantContextMiddleware(BaseHTTPMiddleware):
     """
     Middleware to extract and set tenant context for each request.
     """
     
-    async def __call__(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next):
         """
         Extract tenant_id from request and set it in context.
         """

@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session  # ensure available for type annotations
 from sqlalchemy import func, or_
 from datetime import datetime, timedelta
+from typing import Tuple, Optional, Dict, Any
 from sentrascan.core.storage import init_db, SessionLocal
 from sentrascan.modules.model.scanner import ModelScanner
 from sentrascan.modules.mcp.scanner import MCPScanner
@@ -40,6 +41,12 @@ from sentrascan.core.session import (
     refresh_session, invalidate_session, invalidate_user_sessions,
     cleanup_expired_sessions, SESSION_COOKIE_NAME, sign as sign_session, unsign as unsign_session
 )
+from sentrascan.core.sharding import (
+    init_sharding_metadata, get_shard_schema, create_shard_schema,
+    get_shard_for_tenant, list_shards, deactivate_shard, get_shard_statistics
+)
+from sentrascan.core.key_management import get_key_manager, rotate_tenant_key
+from sentrascan.core.transparent_encryption import enable_transparent_encryption
 import csv
 import io
 import secrets
@@ -130,6 +137,27 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(TenantContextMiddleware)
 
+# Security middleware
+from sentrascan.core.security import (
+    RateLimitMiddleware, SecurityHeadersMiddleware, RequestSizeLimitMiddleware,
+    CORS_ALLOWED_ORIGINS, CORS_ALLOW_CREDENTIALS, sanitize_input, validate_email
+)
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware)
+
+# CORS middleware
+if CORS_ALLOWED_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ALLOWED_ORIGINS,
+        allow_credentials=CORS_ALLOW_CREDENTIALS,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
 # Session management - use module functions
 SESSION_COOKIE = SESSION_COOKIE_NAME  # Imported from session module
 
@@ -187,6 +215,11 @@ def _get_user_from_session(signed_cookie: str, db: Session):
     # Legacy: API key session
     if signed_value:
         rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(signed_value), APIKey.is_revoked == False).first()
+    
+    # Check expiration
+    if rec and rec.expires_at and datetime.utcnow() > rec.expires_at:
+        logger.warning("api_key_expired", api_key_id=rec.id)
+        raise HTTPException(401, "API key has expired")
         return rec
     
     return None
@@ -253,6 +286,11 @@ def require_api_key(x_api_key: str | None = Header(default=None), db: Session = 
     
     if not rec:
         raise HTTPException(403, "Invalid API key")
+    
+    # Check expiration
+    if rec.expires_at and datetime.utcnow() > rec.expires_at:
+        logger.warning("api_key_expired", api_key_id=rec.id)
+        raise HTTPException(401, "API key has expired")
     
     # Check if associated tenant is active
     if rec.tenant_id:
@@ -504,6 +542,10 @@ runner = JobRunner(daemon=True)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    # Initialize sharding metadata
+    init_sharding_metadata()
+    # Enable transparent encryption
+    enable_transparent_encryption()
     # start job runner
     if not runner.is_alive():
         runner.start()
@@ -2002,6 +2044,15 @@ def revoke_api_key(key_id: str, request: Request, db: Session = Depends(get_db))
     key.is_revoked = True
     db.commit()
     
+    # Log security event
+    log_security_event(
+        db, "api_key_revoked", "api_key", key_id,
+        user.id if user else None,
+        key.tenant_id,
+        {"key_name": key.name},
+        request.client.host if request.client else None
+    )
+    
     # Capture telemetry
     telemetry.capture_auth_event(
         event_type="api_key_revoked",
@@ -2033,12 +2084,24 @@ def register_user(
     Register a new user.
     Requires tenant_id (either from request context or provided).
     """
+    # Sanitize and validate inputs
+    email = sanitize_input(email)
+    name = sanitize_input(name)
+    password = sanitize_input(password)
+    
+    if not validate_email(email):
+        raise HTTPException(400, "Invalid email format")
+    
     # Get tenant_id from request context or form
     if not tenant_id:
         tenant_id = extract_tenant_from_request(request, db)
     
     if not tenant_id:
         raise HTTPException(400, "tenant_id is required")
+    
+    # Validate tenant_id format (UUID)
+    if not validate_uuid(tenant_id):
+        raise HTTPException(400, "Invalid tenant_id format")
     
     # Validate tenant exists and is active
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id, Tenant.is_active == True).first()
@@ -2117,13 +2180,28 @@ def login_user(
         
         # Set session cookie with secure settings
         from sentrascan.core.session import SESSION_TIMEOUT_HOURS
+        from sentrascan.core.security import generate_csrf_token, CSRF_COOKIE_NAME
+        
+        # Generate CSRF token
+        csrf_token = generate_csrf_token()
+        
         response.set_cookie(
             SESSION_COOKIE,
             signed_session,
             httponly=True,
-            samesite="lax",
+            samesite="strict",  # Changed to strict for better CSRF protection
             secure=os.environ.get("SENTRASCAN_COOKIE_SECURE", "false").lower() == "true",  # HTTPS only in production
             max_age=SESSION_TIMEOUT_HOURS * 3600  # Configurable timeout
+        )
+        
+        # Set CSRF token cookie
+        response.set_cookie(
+            CSRF_COOKIE_NAME,
+            csrf_token,
+            httponly=False,  # CSRF token must be accessible to JavaScript
+            samesite="strict",
+            secure=os.environ.get("SENTRASCAN_COOKIE_SECURE", "false").lower() == "true",
+            max_age=SESSION_TIMEOUT_HOURS * 3600
         )
         
         return response
@@ -2139,9 +2217,13 @@ def logout_user(request: Request, db: Session = Depends(get_db)):
     """
     Logout a user by clearing the session cookie.
     """
-    # Capture telemetry before clearing session
+    # Capture telemetry and audit log before clearing session
     user = get_session_user(request, db)
     if user:
+        log_authentication_event(
+            db, "logout", user.id if hasattr(user, 'id') else None, True,
+            request.client.host if request.client else None
+        )
         telemetry.capture_auth_event(
             event_type="logout",
             success=True,
@@ -2297,9 +2379,26 @@ def update_user_endpoint(
         user.role = role
     if password is not None:
         user = update_user_password(db, user, password)
+        # Log password change
+        log_security_event(
+            db, "password_changed", "user", user.id,
+            getattr(api_key, "id", None),
+            user.tenant_id,
+            {"changed_by": "admin"},
+            request.client.host if request.client else None
+        )
     
     db.commit()
     db.refresh(user)
+    
+    # Log security event
+    log_security_event(
+        db, "user_updated", "user", user.id,
+        getattr(api_key, "id", None),
+        user.tenant_id,
+        {"updated_fields": ["name" if name else None, "role" if role else None, "password" if password else None]},
+        request.client.host if request.client else None
+    )
     
     # Capture telemetry
     telemetry.capture_auth_event(
@@ -2708,6 +2807,261 @@ def activate_tenant(
         "is_active": True,
         "message": "Tenant activated"
     }
+
+# Shard Management API Endpoints (Super Admin only)
+@app.get("/api/v1/sharding/shard")
+def get_shard_info(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Get shard information for a tenant (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    shard_info = get_shard_for_tenant(tenant_id, db)
+    if not shard_info:
+        raise HTTPException(404, "Shard not found for tenant")
+    
+    return shard_info
+
+@app.get("/api/v1/sharding/shards")
+def list_all_shards(request: Request, db: Session = Depends(get_db)):
+    """List all active shards (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    shards = list_shards(db)
+    return {"shards": shards}
+
+@app.post("/api/v1/sharding/shards")
+def create_shard_for_tenant(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Create a shard schema for a tenant (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    # Verify tenant exists
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    schema_name = create_shard_schema(tenant_id, db)
+    if not schema_name:
+        raise HTTPException(500, "Failed to create shard schema")
+    
+    return {
+        "message": "Shard created",
+        "tenant_id": tenant_id,
+        "schema_name": schema_name
+    }
+
+@app.delete("/api/v1/sharding/shards/{tenant_id}")
+def remove_shard(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Deactivate a shard for a tenant (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    success = deactivate_shard(tenant_id, db)
+    if not success:
+        raise HTTPException(404, "Shard not found for tenant")
+    
+    return {"message": "Shard deactivated", "tenant_id": tenant_id}
+
+@app.get("/api/v1/sharding/statistics")
+def get_sharding_statistics(request: Request, db: Session = Depends(get_db)):
+    """Get sharding statistics (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    stats = get_shard_statistics(db)
+    return stats
+
+# Key Management API Endpoints (Super Admin only)
+@app.post("/api/v1/tenants/{tenant_id}/rotate-key")
+def rotate_tenant_encryption_key(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Rotate encryption key for a tenant (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    # Verify tenant exists
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    try:
+        new_key = rotate_tenant_key(tenant_id)
+        
+        logger.info(
+            "tenant_key_rotated_via_api",
+            tenant_id=tenant_id,
+            rotated_by=user.id if hasattr(user, 'id') else None
+        )
+        
+        return {
+            "message": "Encryption key rotated successfully",
+            "tenant_id": tenant_id,
+            "note": "Old key retained for decrypting existing data"
+        }
+    except Exception as e:
+        logger.error("key_rotation_failed", tenant_id=tenant_id, error=str(e))
+        raise HTTPException(500, f"Failed to rotate key: {str(e)}")
+
+@app.get("/api/v1/tenants/{tenant_id}/key-metadata")
+def get_key_metadata(tenant_id: str, request: Request, db: Session = Depends(get_db)):
+    """Get encryption key metadata for a tenant (super admin only)"""
+    user = get_session_user(request, db)
+    if not user or not check_role(user, "super_admin"):
+        raise HTTPException(403, "Permission denied: super_admin role required")
+    
+    # Verify tenant exists
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    if not tenant:
+        raise HTTPException(404, "Tenant not found")
+    
+    from sentrascan.core.key_management import get_key_manager
+    key_manager = get_key_manager()
+    metadata = key_manager.get_key_metadata(tenant_id)
+    
+    if not metadata:
+        raise HTTPException(404, "No encryption key found for tenant")
+    
+    # Add rotation status
+    metadata["rotation_needed"] = key_manager.check_key_rotation_needed(tenant_id)
+    
+    return metadata
+
+# MFA Endpoints
+@app.post("/api/v1/users/mfa/setup")
+def setup_mfa(request: Request, db: Session = Depends(get_db)):
+    """Setup MFA for the current user"""
+    user = get_session_user(request, db)
+    if not user:
+        raise HTTPException(401, "Authentication required")
+    
+    if not HAS_MFA:
+        raise HTTPException(501, "MFA is not available (pyotp/qrcode not installed)")
+    
+    from sentrascan.core.auth import generate_mfa_secret, generate_mfa_qr_code
+    from sentrascan.core.encryption import encrypt_tenant_data
+    
+    # Generate secret
+    secret = generate_mfa_secret()
+    
+    # Encrypt and store secret
+    encrypted_secret = encrypt_tenant_data(user.tenant_id, secret)
+    user.mfa_secret = encrypted_secret
+    db.commit()
+    
+    # Generate QR code
+    qr_code = generate_mfa_qr_code(secret, user.email)
+    
+    # Log security event
+    log_security_event(
+        db, "mfa_setup", "user", user.id,
+        user.id, user.tenant_id,
+        {},
+        request.client.host if request.client else None
+    )
+    
+    logger.info("mfa_setup_initiated", user_id=user.id)
+    
+    return {
+        "secret": secret,  # Return plaintext secret for initial setup
+        "qr_code": qr_code,
+        "message": "Scan QR code with authenticator app, then verify with /api/v1/users/mfa/verify"
+    }
+
+@app.post("/api/v1/users/mfa/verify")
+def verify_mfa(request: Request, token: str = Form(...), db: Session = Depends(get_db)):
+    """Verify MFA token and enable MFA"""
+    user = get_session_user(request, db)
+    if not user:
+        raise HTTPException(401, "Authentication required")
+    
+    if not HAS_MFA:
+        raise HTTPException(501, "MFA is not available")
+    
+    if not user.mfa_secret:
+        raise HTTPException(400, "MFA not set up. Call /api/v1/users/mfa/setup first")
+    
+    from sentrascan.core.auth import verify_mfa_token
+    from sentrascan.core.encryption import decrypt_tenant_data
+    
+    # Decrypt secret
+    secret = decrypt_tenant_data(user.tenant_id, user.mfa_secret)
+    
+    # Verify token
+    if not verify_mfa_token(secret, token):
+        logger.warning("mfa_verification_failed", user_id=user.id)
+        raise HTTPException(401, "Invalid MFA token")
+    
+    # Enable MFA
+    user.mfa_enabled = True
+    db.commit()
+    
+    # Log security event
+    log_security_event(
+        db, "mfa_enabled", "user", user.id,
+        user.id, user.tenant_id,
+        {},
+        request.client.host if request.client else None
+    )
+    
+    logger.info("mfa_enabled", user_id=user.id)
+    
+    return {"message": "MFA enabled successfully"}
+
+@app.post("/api/v1/users/mfa/disable")
+def disable_mfa(request: Request, token: str = Form(...), db: Session = Depends(get_db)):
+    """Disable MFA for the current user"""
+    user = get_session_user(request, db)
+    if not user:
+        raise HTTPException(401, "Authentication required")
+    
+    if not user.mfa_enabled:
+        raise HTTPException(400, "MFA is not enabled")
+    
+    if not HAS_MFA:
+        raise HTTPException(501, "MFA is not available")
+    
+    from sentrascan.core.auth import verify_mfa_token
+    from sentrascan.core.encryption import decrypt_tenant_data
+    
+    # Verify token before disabling
+    secret = decrypt_tenant_data(user.tenant_id, user.mfa_secret)
+    if not verify_mfa_token(secret, token):
+        raise HTTPException(401, "Invalid MFA token")
+    
+    # Disable MFA
+    user.mfa_enabled = False
+    user.mfa_secret = None
+    db.commit()
+    
+    # Log security event
+    log_security_event(
+        db, "mfa_disabled", "user", user.id,
+        user.id, user.tenant_id,
+        {},
+        request.client.host if request.client else None
+    )
+    
+    logger.info("mfa_disabled", user_id=user.id)
+    
+    return {"message": "MFA disabled successfully"}
+
+# API Key expiration and rotation
+API_KEY_EXPIRATION_DAYS = int(os.environ.get("API_KEY_EXPIRATION_DAYS", "365"))
+API_KEY_ROTATION_INTERVAL_DAYS = int(os.environ.get("API_KEY_ROTATION_INTERVAL_DAYS", "90"))
+
+def check_api_key_expiration(api_key) -> Tuple[bool, Optional[datetime]]:
+    """Check if API key has expired"""
+    if not api_key.expires_at:
+        return False, None
+    
+    is_expired = datetime.utcnow() > api_key.expires_at
+    return is_expired, api_key.expires_at
 
 def run_server(host: str, port: int):
     import uvicorn

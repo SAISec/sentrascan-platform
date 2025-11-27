@@ -35,6 +35,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     mfa_enabled = Column(Boolean, default=False)
     mfa_secret = Column(String, nullable=True)  # Encrypted MFA secret
+    password_changed_at = Column(TIMESTAMP, nullable=True)  # Track password changes for expiration
     
     # Relationships
     audit_logs = relationship("AuditLog", backref="user", cascade="all, delete-orphan")
@@ -132,6 +133,9 @@ class APIKey(Base):
     created_at = Column(TIMESTAMP, default=datetime.utcnow)
     tenant_id = Column(String, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # Optional: associate with user
+    expires_at = Column(TIMESTAMP, nullable=True)  # Optional expiration date
+    last_rotated_at = Column(TIMESTAMP, nullable=True)  # Track key rotation
+    rotation_count = Column(Integer, default=0)  # Number of times key has been rotated
     
     __table_args__ = (
         Index('idx_api_keys_tenant_id', 'tenant_id'),
