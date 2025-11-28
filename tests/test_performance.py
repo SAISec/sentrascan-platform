@@ -128,7 +128,7 @@ class TestAPIPerformance:
 class TestDatabaseQueryPerformance:
     """Test 2: Database query performance"""
     
-    def test_tenant_scoped_query_performance(self, db_session, performance_tenant, benchmark):
+    def test_tenant_scoped_query_performance(self, db_session, performance_tenant):
         """Test that tenant-scoped queries complete within target time"""
         # Create test data
         scans = []
@@ -144,38 +144,22 @@ class TestDatabaseQueryPerformance:
         db_session.add_all(scans)
         db_session.commit()
         
-        # Measure query time with benchmark or manual timing
-        if HAS_BENCHMARK:
-            def query_func():
-                return db_session.query(Scan).filter(
+        # Measure query time (manual timing - benchmark can be added later if needed)
+        times = []
+        for _ in range(10):
+            _, elapsed_ms = measure_time(
+                lambda: db_session.query(Scan).filter(
                     Scan.tenant_id == performance_tenant.id
                 ).all()
-            
-            result = benchmark.pedantic(
-                query_func,
-                rounds=10,
-                iterations=1
             )
-            # Benchmark provides timing info, but we still need to verify target
-            # For now, just verify query works
-            assert result is not None
-        else:
-            # Fallback to manual timing
-            times = []
-            for _ in range(10):
-                _, elapsed_ms = measure_time(
-                    lambda: db_session.query(Scan).filter(
-                        Scan.tenant_id == performance_tenant.id
-                    ).all()
-                )
-                times.append(elapsed_ms)
-            
-            # Calculate 95th percentile
-            p95 = percentile(times, 95)
-            
-            # Verify target
-            assert p95 < DB_QUERY_TIME_TARGET_MS, \
-                f"95th percentile query time {p95:.2f}ms exceeds target {DB_QUERY_TIME_TARGET_MS}ms"
+            times.append(elapsed_ms)
+        
+        # Calculate 95th percentile
+        p95 = percentile(times, 95)
+        
+        # Verify target
+        assert p95 < DB_QUERY_TIME_TARGET_MS, \
+            f"95th percentile query time {p95:.2f}ms exceeds target {DB_QUERY_TIME_TARGET_MS}ms"
         
         # Cleanup
         db_session.query(Scan).filter(
