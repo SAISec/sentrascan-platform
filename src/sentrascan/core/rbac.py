@@ -48,6 +48,8 @@ ROLES = {
             "api_key.delete",
             "settings.read",
             "settings.update",
+            "tenant_settings.update",
+            "tenant_settings.view",
         ],
         "tenant_scope": "all"  # Can access all tenants
     },
@@ -69,6 +71,8 @@ ROLES = {
             "api_key.delete",
             "settings.read",
             "settings.update",
+            "tenant_settings.update",
+            "tenant_settings.view",
         ],
         "tenant_scope": "own"  # Can only access own tenant
     },
@@ -80,6 +84,7 @@ ROLES = {
             "finding.read",
             "api_key.read",
             "settings.read",
+            "tenant_settings.view",
         ],
         "tenant_scope": "own"
     },
@@ -92,6 +97,7 @@ ROLES = {
             "finding.read",
             "api_key.read",
             "settings.read",
+            "tenant_settings.view",
         ],
         "tenant_scope": "own"
     }

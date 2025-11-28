@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Documentation - SentraScan Platform{% endblock %}
+
+{% block extra_head %}
+<!-- Markdown rendering library -->
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+<!-- Syntax highlighting -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism.min.css">
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+<!-- Documentation styles -->
+<link rel="stylesheet" href="/static/css/docs.css" />
+{% endblock %}
+
+{% block content %}
+<div class="docs-container" style="display: flex; min-height: calc(100vh - 200px);">
+  <!-- Sidebar Navigation -->
+  <aside class="docs-sidebar" id="docs-sidebar" role="complementary" aria-label="Documentation navigation">
+    <div class="docs-sidebar-header">
+      <h2 style="margin: 0; font-size: var(--font-size-lg); font-weight: var(--font-weight-bold);">Documentation</h2>
+      <button class="docs-sidebar-toggle" id="sidebar-toggle" aria-label="Toggle sidebar" aria-expanded="true">
+        <span class="icon icon-menu" aria-hidden="true"></span>
+      </button>
+    </div>
+    
+    <!-- Search -->
+    <div class="docs-search" role="search">
+      <label for="docs-search-input" class="sr-only">Search documentation</label>
+      <input 
+        type="search" 
+        id="docs-search-input" 
+        class="docs-search-input" 
+        placeholder="Search documentation..."
+        aria-label="Search documentation"
+        autocomplete="off"
+      />
+      <button class="docs-search-clear" id="search-clear" aria-label="Clear search" style="display: none;">
+        <span class="icon icon-close" aria-hidden="true"></span>
+      </button>
+    </div>
+    
+    <!-- Navigation Tree -->
+    <nav class="docs-nav" role="navigation" aria-label="Documentation sections">
+      <ul class="docs-nav-list" id="docs-nav-list">
+        <li><a href="/docs?page=getting-started" data-page="getting-started">Getting Started</a></li>
+        <li><a href="/docs?page=user-guide" data-page="user-guide">User Guide</a></li>
+        <li><a href="/docs?page=api" data-page="api">API Documentation</a></li>
+        <li><a href="/docs?page=how-to" data-page="how-to">How-To Guides</a></li>
+        <li><a href="/docs?page=troubleshooting" data-page="troubleshooting">Troubleshooting</a></li>
+        <li><a href="/docs?page=faq" data-page="faq">FAQ</a></li>
+        <li><a href="/docs?page=best-practices" data-page="best-practices">Best Practices</a></li>
+        <li><a href="/docs?page=glossary" data-page="glossary">Glossary</a></li>
+      </ul>
+    </nav>
+    
+    <!-- Table of Contents (generated from content) -->
+    <nav class="docs-toc" id="docs-toc" role="navigation" aria-label="Table of contents">
+      <h3 class="docs-toc-title">Table of Contents</h3>
+      <ul class="docs-toc-list" id="docs-toc-list"></ul>
+    </nav>
+  </aside>
+  
+  <!-- Main Content -->
+  <main class="docs-main" id="main-content" role="main">
+    <!-- Breadcrumb -->
+    <nav class="docs-breadcrumb" aria-label="Breadcrumb">
+      <ol class="breadcrumb-list">
+        <li><a href="/">Home</a></li>
+        <li><a href="/docs">Documentation</a></li>
+        <li id="breadcrumb-current" aria-current="page">Loading...</li>
+      </ol>
+    </nav>
+    
+    <!-- Content Area -->
+    <article class="docs-content" id="docs-content">
+      <div class="docs-loading" id="docs-loading" role="status" aria-live="polite">
+        <p>Loading documentation...</p>
+      </div>
+      <div class="docs-error" id="docs-error" role="alert" style="display: none;">
+        <p>Error loading documentation. Please try again.</p>
+      </div>
+    </article>
+    
+    <!-- Print Button -->
+    <div class="docs-actions">
+      <button class="btn btn-secondary" id="print-docs" aria-label="Print documentation">
+        <span class="icon icon-print" aria-hidden="true"></span>
+        Print
+      </button>
+    </div>
+  </main>
+</div>
+
+<!-- Search Results Modal -->
+<div class="docs-search-results" id="search-results" role="dialog" aria-label="Search results" aria-hidden="true">
+  <div class="search-results-header">
+    <h2>Search Results</h2>
+    <button class="search-results-close" id="search-results-close" aria-label="Close search results">
+      <span class="icon icon-close" aria-hidden="true"></span>
+    </button>
+  </div>
+  <div class="search-results-content" id="search-results-content"></div>
+</div>
+
+<script src="/static/js/docs.js"></script>
+{% endblock %}
+

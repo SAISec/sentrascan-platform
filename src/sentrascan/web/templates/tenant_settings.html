@@ -1,0 +1,320 @@
+{% extends "base.html" %}
+
+{% block title %}Tenant Settings - SentraScan{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Tenant Settings</h1>
+        <p class="text-gray-600 dark:text-gray-400 mt-2">Configure tenant-specific settings for policy, scanners, severity, notifications, scans, and integrations.</p>
+    </div>
+
+    <!-- Settings Tabs -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+        <div class="border-b border-gray-200 dark:border-gray-700">
+            <nav class="flex -mb-px" aria-label="Tabs">
+                <button onclick="showTab('policy')" id="tab-policy" class="tab-button active px-6 py-3 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400">
+                    Policy
+                </button>
+                <button onclick="showTab('scanner')" id="tab-scanner" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300">
+                    Scanner
+                </button>
+                <button onclick="showTab('severity')" id="tab-severity" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300">
+                    Severity
+                </button>
+                <button onclick="showTab('notification')" id="tab-notification" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300">
+                    Notification
+                </button>
+                <button onclick="showTab('scan')" id="tab-scan" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300">
+                    Scan
+                </button>
+                <button onclick="showTab('integration')" id="tab-integration" class="tab-button px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300">
+                    Integration
+                </button>
+            </nav>
+        </div>
+
+        <!-- Policy Settings -->
+        <div id="panel-policy" class="tab-panel p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Policy Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Gate Thresholds -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Gate Thresholds</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Critical Max</label>
+                            <input type="number" id="policy-gate-critical" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">High Max</label>
+                            <input type="number" id="policy-gate-high" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Medium Max</label>
+                            <input type="number" id="policy-gate-medium" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Low Max</label>
+                            <input type="number" id="policy-gate-low" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pass Criteria -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Pass Criteria</h3>
+                    <div class="space-y-3">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="policy-require-all-scanners" class="mr-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Require all scanners to pass</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="policy-allow-warnings" class="mr-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Allow warnings</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scanner Settings -->
+        <div id="panel-scanner" class="tab-panel hidden p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Scanner Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Enabled Scanners -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Enabled Scanners</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="scanner-enabled-mcp" class="mr-2" checked>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">MCP Scanner</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="scanner-enabled-model" class="mr-2" checked>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Model Scanner</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Scanner Timeouts -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Scanner Timeouts (seconds)</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">MCP Timeout</label>
+                            <input type="number" id="scanner-timeout-mcp" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model Timeout</label>
+                            <input type="number" id="scanner-timeout-model" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Severity Settings -->
+        <div id="panel-severity" class="tab-panel hidden p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Severity Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Severity Thresholds -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Severity Thresholds</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Critical</label>
+                            <input type="number" id="severity-threshold-critical" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">High</label>
+                            <input type="number" id="severity-threshold-high" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Medium</label>
+                            <input type="number" id="severity-threshold-medium" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Low</label>
+                            <input type="number" id="severity-threshold-low" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Severity Actions -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Severity Actions</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Critical Action</label>
+                            <select id="severity-action-critical" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="block">Block</option>
+                                <option value="warn">Warn</option>
+                                <option value="notify">Notify</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">High Action</label>
+                            <select id="severity-action-high" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="block">Block</option>
+                                <option value="warn">Warn</option>
+                                <option value="notify">Notify</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Medium Action</label>
+                            <select id="severity-action-medium" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="block">Block</option>
+                                <option value="warn">Warn</option>
+                                <option value="notify">Notify</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Low Action</label>
+                            <select id="severity-action-low" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                                <option value="block">Block</option>
+                                <option value="warn">Warn</option>
+                                <option value="notify">Notify</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Notification Settings -->
+        <div id="panel-notification" class="tab-panel hidden p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Notification Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Alert Thresholds -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Alert Thresholds</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Critical Count</label>
+                            <input type="number" id="notification-alert-critical" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">High Count</label>
+                            <input type="number" id="notification-alert-high" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Medium Count</label>
+                            <input type="number" id="notification-alert-medium" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Low Count</label>
+                            <input type="number" id="notification-alert-low" min="0" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Notification Channels -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Notification Channels</h3>
+                    <div class="space-y-2">
+                        <label class="flex items-center">
+                            <input type="checkbox" id="notification-email" class="mr-2" checked>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Email</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="notification-webhook" class="mr-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Webhook</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="notification-slack" class="mr-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Slack</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="notification-teams" class="mr-2">
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Microsoft Teams</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scan Settings -->
+        <div id="panel-scan" class="tab-panel hidden p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Scan Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Default Scan Parameters -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Default Scan Parameters</h3>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeout (seconds)</label>
+                            <input type="number" id="scan-default-timeout" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="scan-default-auto-discover" class="mr-2" checked>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Auto Discover</span>
+                        </label>
+                        <label class="flex items-center">
+                            <input type="checkbox" id="scan-default-include-sbom" class="mr-2" checked>
+                            <span class="text-sm text-gray-700 dark:text-gray-300">Include SBOM</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Retention Policies -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Retention Policies (days)</h3>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Scan Retention</label>
+                            <input type="number" id="scan-retention-scans" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Finding Retention</label>
+                            <input type="number" id="scan-retention-findings" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">SBOM Retention</label>
+                            <input type="number" id="scan-retention-sbom" min="1" class="w-full px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Integration Settings -->
+        <div id="panel-integration" class="tab-panel hidden p-6">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white mb-4">Integration Settings</h2>
+            
+            <div class="space-y-6">
+                <!-- Webhook URLs -->
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Webhook URLs</h3>
+                    <div id="webhook-urls-container" class="space-y-2">
+                        <!-- Webhook URLs will be added dynamically -->
+                    </div>
+                    <button onclick="addWebhookUrl()" class="mt-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm">
+                        Add Webhook URL
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="border-t border-gray-200 dark:border-gray-700 p-6 flex justify-between">
+            <button onclick="resetToDefaults()" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+                Reset to Defaults
+            </button>
+            <div class="space-x-3">
+                <button onclick="saveSettings()" class="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                    Save Settings
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/tenant_settings.js"></script>
+{% endblock %}
+

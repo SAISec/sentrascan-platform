@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, Depends, Request, Header, Response, Form
+from fastapi import FastAPI, HTTPException, Depends, Request, Header, Response, Form, Body
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
 from fastapi.exceptions import RequestValidationError
@@ -396,6 +396,13 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
     # Require tenant context
     tenant_id = require_tenant(request, db)
     
+    # Check if model scanner is enabled for this tenant
+    from sentrascan.core.tenant_settings import get_tenant_setting
+    scanner_settings = get_tenant_setting(db, tenant_id, "scanner", {})
+    enabled_scanners = scanner_settings.get("enabled_scanners", ["mcp", "model"])
+    if "model" not in enabled_scanners:
+        raise HTTPException(403, "Model scanner is disabled for this tenant")
+    
     logger.info(
         "model_scan_started",
         api_key_id=getattr(api_key, "id", None),
@@ -407,10 +414,16 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
         raise HTTPException(400, "paths or model_path is required")
     sbom = payload.get("generate_sbom")
     policy_path = payload.get("policy")
-    pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_model()
+    
+    # Get scanner timeout from tenant settings
+    scanner_timeouts = scanner_settings.get("scanner_timeouts", {})
+    default_timeout = scanner_timeouts.get("model_timeout", payload.get("timeout", 0))
+    timeout = payload.get("timeout", default_timeout)
+    
+    pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db) if policy_path else PolicyEngine.default_model(tenant_id=tenant_id, db=db)
     ms = ModelScanner(policy=pe)
     try:
-        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=payload.get("timeout", 0), db=db, tenant_id=tenant_id)
+        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=timeout, db=db, tenant_id=tenant_id)
         
         # Capture telemetry
         telemetry.capture_scan_event(
@@ -466,6 +479,13 @@ def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), 
     # Require tenant context
     tenant_id = require_tenant(request, db)
     
+    # Check if MCP scanner is enabled for this tenant
+    from sentrascan.core.tenant_settings import get_tenant_setting
+    scanner_settings = get_tenant_setting(db, tenant_id, "scanner", {})
+    enabled_scanners = scanner_settings.get("enabled_scanners", ["mcp", "model"])
+    if "mcp" not in enabled_scanners:
+        raise HTTPException(403, "MCP scanner is disabled for this tenant")
+    
     logger.info(
         "mcp_scan_started",
         api_key_id=getattr(api_key, "id", None),
@@ -475,11 +495,16 @@ def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), 
         timeout=payload.get("timeout", 60)
     )
     
+    # Get scanner timeout from tenant settings
+    scanner_timeouts = scanner_settings.get("scanner_timeouts", {})
+    default_timeout = scanner_timeouts.get("mcp_timeout", payload.get("timeout", 60))
+    timeout = payload.get("timeout", default_timeout)
+    
     policy_path = payload.get("policy")
-    pe = PolicyEngine.from_file(policy_path) if policy_path else PolicyEngine.default_mcp()
+    pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db) if policy_path else PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
     scanner = MCPScanner(policy=pe)
     try:
-        scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=payload.get("timeout", 60), db=db, tenant_id=tenant_id)
+        scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=timeout, db=db, tenant_id=tenant_id)
         logger.info(
             "mcp_scan_completed",
             scan_id=scan.id,
@@ -518,17 +543,17 @@ class JobRunner(Thread):
             try:
                 db = get_db_session()
                 if job["type"] == "model":
-                    pe = PolicyEngine.default_model()
-                    ms = ModelScanner(policy=pe)
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
+                    pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+                    ms = ModelScanner(policy=pe)
                     scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
                     job["on_done"](scan.id)
                 elif job["type"] == "mcp":
-                    pe = PolicyEngine.default_mcp()
-                    scanner = MCPScanner(policy=pe)
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
+                    pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+                    scanner = MCPScanner(policy=pe)
                     scan = scanner.scan(config_paths=job.get("config_paths") or [], auto_discover=job.get("auto_discover", True), timeout=job.get("timeout", 60), db=db, tenant_id=tenant_id)
                     job["on_done"](scan.id)
             except Exception:
@@ -1194,6 +1219,176 @@ def ui_users(request: Request):
     finally:
         db.close()
 
+@app.get("/docs")
+def ui_docs(request: Request):
+    """Documentation viewer page"""
+    user = get_session_user(request)
+    tenant = None
+    if user and hasattr(user, 'tenant_id'):
+        db = get_db_session()
+        try:
+            from sentrascan.core.models import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        except Exception:
+            pass
+        finally:
+            db.close()
+    
+    return templates.TemplateResponse(
+        "docs.html",
+        {"request": request, "user": user, "tenant": tenant}
+    )
+
+@app.get("/api/v1/docs/raw/{file_path:path}")
+def get_docs_file(file_path: str):
+    """Serve raw markdown documentation files"""
+    import os
+    from pathlib import Path
+    
+    # Security: prevent path traversal
+    if '..' in file_path or file_path.startswith('/'):
+        raise HTTPException(400, "Invalid file path")
+    
+    # Construct file path
+    docs_dir = Path(__file__).parent.parent.parent / "docs"
+    file_path_obj = docs_dir / file_path
+    
+    # Ensure file is within docs directory
+    try:
+        file_path_obj.resolve().relative_to(docs_dir.resolve())
+    except ValueError:
+        raise HTTPException(400, "Invalid file path")
+    
+    # Check if file exists
+    if not file_path_obj.exists() or not file_path_obj.is_file():
+        raise HTTPException(404, "File not found")
+    
+    # Read and return file
+    try:
+        content = file_path_obj.read_text(encoding='utf-8')
+        return Response(content=content, media_type="text/markdown; charset=utf-8")
+    except Exception as e:
+        logger.error("error_reading_docs_file", file_path=file_path, error=str(e))
+        raise HTTPException(500, "Error reading file")
+
+@app.get("/docs")
+def ui_docs(request: Request):
+    """Documentation viewer page"""
+    user = get_session_user(request)
+    tenant = None
+    if user and hasattr(user, 'tenant_id'):
+        db = get_db_session()
+        try:
+            from sentrascan.core.models import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        except Exception:
+            pass
+        finally:
+            db.close()
+    
+    return templates.TemplateResponse(
+        "docs.html",
+        {"request": request, "user": user, "tenant": tenant}
+    )
+
+@app.get("/api/v1/docs/raw/{file_path:path}")
+def get_docs_file(file_path: str):
+    """Serve raw markdown documentation files"""
+    import os
+    from pathlib import Path
+    
+    # Security: prevent path traversal
+    if '..' in file_path or file_path.startswith('/'):
+        raise HTTPException(400, "Invalid file path")
+    
+    # Construct file path
+    docs_dir = Path(__file__).parent.parent.parent / "docs"
+    file_path_obj = docs_dir / file_path
+    
+    # Ensure file is within docs directory
+    try:
+        file_path_obj.resolve().relative_to(docs_dir.resolve())
+    except ValueError:
+        raise HTTPException(400, "Invalid file path")
+    
+    # Check if file exists
+    if not file_path_obj.exists() or not file_path_obj.is_file():
+        raise HTTPException(404, "File not found")
+    
+    # Read and return file
+    try:
+        content = file_path_obj.read_text(encoding='utf-8')
+        return Response(content=content, media_type="text/markdown; charset=utf-8")
+    except Exception as e:
+        logger.error("error_reading_docs_file", file_path=file_path, error=str(e))
+        raise HTTPException(500, "Error reading file")
+
+@app.get("/tenant-settings")
+def ui_tenant_settings(request: Request):
+    """Tenant Settings management page"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Check permission (tenant admin required for update, but viewer can view)
+        if not check_permission(user, "tenant_settings.view"):
+            raise HTTPException(403, "Permission denied: tenant_settings.view required")
+        
+        # Get tenant info
+        tenant = None
+        if hasattr(user, 'tenant_id') and user.tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Tenant Settings", "url": "/tenant-settings"}
+        ]
+        
+        return templates.TemplateResponse(
+            "tenant_settings.html",
+            {
+                "request": request,
+                "user": user,
+                "tenant": tenant,
+                "breadcrumb_items": breadcrumb_items
+            }
+        )
+    finally:
+        db.close()
+
+@app.get("/analytics")
+def ui_analytics(request: Request):
+    """Analytics dashboard page"""
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        if not user:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Get tenant info
+        tenant = None
+        if hasattr(user, 'tenant_id') and user.tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        
+        breadcrumb_items = [
+            {"label": "Dashboard", "url": "/"},
+            {"label": "Analytics", "url": "/analytics"}
+        ]
+        
+        return templates.TemplateResponse(
+            "analytics.html",
+            {
+                "request": request,
+                "user": user,
+                "tenant": tenant,
+                "breadcrumb_items": breadcrumb_items
+            }
+        )
+    finally:
+        db.close()
+
 @app.get("/tenants")
 def ui_tenants(request: Request):
     """Tenant management page (super admin only)"""
@@ -1558,7 +1753,7 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
         if not tenant_id:
             return RedirectResponse(url="/login?error=tenant_required", status_code=302)
         
-        pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_model()
+        pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db) if policy else PolicyEngine.default_model(tenant_id=tenant_id, db=db)
         ms = ModelScanner(policy=pe)
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
@@ -1606,7 +1801,7 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
             rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
         if not rec or rec.role != "admin":
             return RedirectResponse(url="/login", status_code=302)
-        pe = PolicyEngine.from_file(policy) if policy else PolicyEngine.default_mcp()
+        pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db) if policy else PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
         scanner = MCPScanner(policy=pe)
         paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
         if run_async:
@@ -2807,6 +3002,451 @@ def activate_tenant(
         "is_active": True,
         "message": "Tenant activated"
     }
+
+# Analytics API Endpoints
+@app.get("/api/v1/analytics/trends")
+def get_analytics_trends(
+    request: Request,
+    days: int = 30,
+    group_by: str = "day",
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get trend analysis for findings over time"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import get_trend_analysis
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return get_trend_analysis(db, tenant_id, start_date, end_date, group_by)
+
+
+@app.get("/api/v1/analytics/severity-distribution")
+def get_analytics_severity_distribution(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get severity distribution of findings"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import get_severity_distribution
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return get_severity_distribution(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/analytics/scanner-effectiveness")
+def get_analytics_scanner_effectiveness(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get scanner effectiveness metrics"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import get_scanner_effectiveness
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return get_scanner_effectiveness(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/analytics/remediation-progress")
+def get_analytics_remediation_progress(
+    request: Request,
+    days: int = 90,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get remediation progress tracking"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import get_remediation_progress
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return get_remediation_progress(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/analytics/risk-scores")
+def get_analytics_risk_scores(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get risk scores and prioritization"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import get_risk_scores
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return get_risk_scores(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/analytics/export")
+def export_analytics(
+    request: Request,
+    format: str = "json",
+    days: int = 30,
+    include_trends: bool = True,
+    include_severity: bool = True,
+    include_scanner: bool = True,
+    include_remediation: bool = True,
+    include_risk: bool = True,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Export analytics data in CSV, JSON, or PDF format"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.analytics import (
+        get_trend_analysis, get_severity_distribution,
+        get_scanner_effectiveness, get_remediation_progress, get_risk_scores
+    )
+    from sentrascan.core.analytics_export import (
+        export_trends_csv, export_severity_distribution_csv,
+        export_scanner_effectiveness_csv, export_remediation_progress_csv,
+        export_risk_scores_csv, export_analytics_pdf, export_analytics_json
+    )
+    from datetime import datetime, timedelta
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get tenant name for PDF
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    tenant_name = tenant.name if tenant else "Unknown"
+    
+    # Fetch analytics data
+    trend_data = None
+    severity_data = None
+    scanner_data = None
+    remediation_data = None
+    risk_data = None
+    
+    if include_trends:
+        trend_data = get_trend_analysis(db, tenant_id, start_date, end_date)
+    if include_severity:
+        severity_data = get_severity_distribution(db, tenant_id, start_date, end_date)
+    if include_scanner:
+        scanner_data = get_scanner_effectiveness(db, tenant_id, start_date, end_date)
+    if include_remediation:
+        remediation_data = get_remediation_progress(db, tenant_id, start_date, end_date)
+    if include_risk:
+        risk_data = get_risk_scores(db, tenant_id, start_date, end_date)
+    
+    # Export based on format
+    if format.lower() == "csv":
+        # Combine all CSV exports
+        csv_parts = []
+        if trend_data:
+            csv_parts.append("=== TREND ANALYSIS ===\n")
+            csv_parts.append(export_trends_csv(trend_data))
+            csv_parts.append("\n\n")
+        if severity_data:
+            csv_parts.append("=== SEVERITY DISTRIBUTION ===\n")
+            csv_parts.append(export_severity_distribution_csv(severity_data))
+            csv_parts.append("\n\n")
+        if scanner_data:
+            csv_parts.append("=== SCANNER EFFECTIVENESS ===\n")
+            csv_parts.append(export_scanner_effectiveness_csv(scanner_data))
+            csv_parts.append("\n\n")
+        if remediation_data:
+            csv_parts.append("=== REMEDIATION PROGRESS ===\n")
+            csv_parts.append(export_remediation_progress_csv(remediation_data))
+            csv_parts.append("\n\n")
+        if risk_data:
+            csv_parts.append("=== RISK SCORES ===\n")
+            csv_parts.append(export_risk_scores_csv(risk_data))
+        
+        return Response(
+            content="".join(csv_parts),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=sentrascan-analytics-{datetime.utcnow().strftime('%Y%m%d')}.csv"}
+        )
+    elif format.lower() == "pdf":
+        try:
+            pdf_content = export_analytics_pdf(
+                trend_data=trend_data if include_trends else None,
+                severity_data=severity_data if include_severity else None,
+                scanner_data=scanner_data if include_scanner else None,
+                remediation_data=remediation_data if include_remediation else None,
+                risk_data=risk_data if include_risk else None,
+                tenant_name=tenant_name
+            )
+            return Response(
+                content=pdf_content,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename=sentrascan-analytics-{datetime.utcnow().strftime('%Y%m%d')}.pdf"}
+            )
+        except ValueError as e:
+            raise HTTPException(500, f"PDF export not available: {str(e)}")
+    else:
+        # JSON format (default)
+        json_content = export_analytics_json(
+            trend_data=trend_data if include_trends else None,
+            severity_data=severity_data if include_severity else None,
+            scanner_data=scanner_data if include_scanner else None,
+            remediation_data=remediation_data if include_remediation else None,
+            risk_data=risk_data if include_risk else None
+        )
+        return Response(
+            content=json_content,
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=sentrascan-analytics-{datetime.utcnow().strftime('%Y%m%d')}.json"}
+        )
+
+
+# Tenant Settings API Endpoints
+@app.get("/api/v1/tenant-settings")
+def get_tenant_settings_endpoint(
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get all settings for the current tenant"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.tenant_settings import get_tenant_settings
+    
+    settings = get_tenant_settings(db, tenant_id)
+    return settings
+
+
+@app.get("/api/v1/tenant-settings/{setting_key:path}")
+def get_tenant_setting_endpoint(
+    setting_key: str,
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get a specific setting for the current tenant"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.tenant_settings import get_tenant_setting
+    
+    value = get_tenant_setting(db, tenant_id, setting_key)
+    return {"key": setting_key, "value": value}
+
+
+@app.put("/api/v1/tenant-settings/{setting_key:path}")
+def update_tenant_setting_endpoint(
+    setting_key: str,
+    request: Request,
+    setting_value: dict = Body(...),
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Update a specific setting for the current tenant"""
+    tenant_id = require_tenant(request, db)
+    
+    # Check permission (tenant admin required)
+    if not check_permission(api_key, "tenant_settings.update"):
+        raise HTTPException(403, "Permission denied: tenant_settings.update required")
+    
+    from sentrascan.core.tenant_settings import set_tenant_setting
+    from sentrascan.core.models import User
+    
+    # Get user ID for audit logging
+    user_id = None
+    if isinstance(api_key, User):
+        user_id = api_key.id
+    elif hasattr(api_key, "user_id"):
+        user_id = api_key.user_id
+    
+    set_tenant_setting(db, tenant_id, setting_key, setting_value, user_id=user_id)
+    
+    return {"key": setting_key, "value": setting_value, "updated": True}
+
+
+@app.put("/api/v1/tenant-settings")
+def update_tenant_settings_endpoint(
+    request: Request,
+    settings: dict = Body(...),
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Update multiple settings for the current tenant"""
+    tenant_id = require_tenant(request, db)
+    
+    # Check permission (tenant admin required)
+    if not check_permission(api_key, "tenant_settings.update"):
+        raise HTTPException(403, "Permission denied: tenant_settings.update required")
+    
+    from sentrascan.core.tenant_settings import set_tenant_settings
+    from sentrascan.core.models import User
+    
+    # Get user ID for audit logging
+    user_id = None
+    if isinstance(api_key, User):
+        user_id = api_key.id
+    elif hasattr(api_key, "user_id"):
+        user_id = api_key.user_id
+    
+    set_tenant_settings(db, tenant_id, settings, user_id=user_id)
+    
+    return {"settings": settings, "updated": True}
+
+
+@app.post("/api/v1/tenant-settings/reset")
+def reset_tenant_settings_endpoint(
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Reset all settings to defaults for the current tenant"""
+    tenant_id = require_tenant(request, db)
+    
+    # Check permission (tenant admin required)
+    if not check_permission(api_key, "tenant_settings.update"):
+        raise HTTPException(403, "Permission denied: tenant_settings.update required")
+    
+    from sentrascan.core.tenant_settings import reset_tenant_settings_to_defaults
+    from sentrascan.core.models import User
+    
+    # Get user ID for audit logging
+    user_id = None
+    if isinstance(api_key, User):
+        user_id = api_key.id
+    elif hasattr(api_key, "user_id"):
+        user_id = api_key.user_id
+    
+    reset_tenant_settings_to_defaults(db, tenant_id, user_id=user_id)
+    
+    return {"reset": True}
+
+# ML Insights API Endpoints
+@app.get("/api/v1/ml-insights/status")
+def get_ml_insights_status(
+    request: Request,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get ML insights feature status"""
+    from sentrascan.core.ml_insights import is_ml_insights_enabled
+    
+    return {
+        "enabled": is_ml_insights_enabled(),
+        "message": "ML insights are enabled" if is_ml_insights_enabled() else "ML insights are disabled (set ML_INSIGHTS_ENABLED=true and install scikit-learn)"
+    }
+
+
+@app.get("/api/v1/ml-insights")
+def get_ml_insights(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get ML insights (anomaly detection, correlations, remediation prioritization)"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.ml_insights import (
+        detect_anomalies, analyze_correlations, prioritize_remediations, is_ml_insights_enabled
+    )
+    from datetime import datetime, timedelta
+    
+    if not is_ml_insights_enabled():
+        raise HTTPException(503, "ML insights are not enabled. Set ML_INSIGHTS_ENABLED=true and install scikit-learn.")
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    # Get all ML insights
+    anomalies = detect_anomalies(db, tenant_id, start_date, end_date)
+    correlations = analyze_correlations(db, tenant_id, start_date, end_date)
+    remediations = prioritize_remediations(db, tenant_id, start_date, end_date)
+    
+    return {
+        "enabled": True,
+        "period": {"start": start_date.isoformat(), "end": end_date.isoformat()},
+        "anomaly_detection": anomalies,
+        "correlations": correlations,
+        "remediation_prioritization": remediations
+    }
+
+
+@app.get("/api/v1/ml-insights/anomalies")
+def get_ml_anomalies(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get anomaly detection results"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.ml_insights import detect_anomalies, is_ml_insights_enabled
+    from datetime import datetime, timedelta
+    
+    if not is_ml_insights_enabled():
+        raise HTTPException(503, "ML insights are not enabled")
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return detect_anomalies(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/ml-insights/correlations")
+def get_ml_correlations(
+    request: Request,
+    days: int = 30,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get finding correlation analysis"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.ml_insights import analyze_correlations, is_ml_insights_enabled
+    from datetime import datetime, timedelta
+    
+    if not is_ml_insights_enabled():
+        raise HTTPException(503, "ML insights are not enabled")
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return analyze_correlations(db, tenant_id, start_date, end_date)
+
+
+@app.get("/api/v1/ml-insights/remediations")
+def get_ml_remediations(
+    request: Request,
+    days: int = 90,
+    api_key=Depends(require_api_key),
+    db: Session = Depends(get_db)
+):
+    """Get prioritized remediation recommendations"""
+    tenant_id = require_tenant(request, db)
+    
+    from sentrascan.core.ml_insights import prioritize_remediations, is_ml_insights_enabled
+    from datetime import datetime, timedelta
+    
+    if not is_ml_insights_enabled():
+        raise HTTPException(503, "ML insights are not enabled")
+    
+    end_date = datetime.utcnow()
+    start_date = end_date - timedelta(days=days)
+    
+    return prioritize_remediations(db, tenant_id, start_date, end_date)
 
 # Shard Management API Endpoints (Super Admin only)
 @app.get("/api/v1/sharding/shard")

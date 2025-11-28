@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics Dashboard - SentraScan{% endblock %}
+
+{% block extra_head %}
+<style>
+  .analytics-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: var(--spacing-lg);
+  }
+  
+  .analytics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-xl);
+    flex-wrap: wrap;
+    gap: var(--spacing-md);
+  }
+  
+  .time-range-selector {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+  }
+  
+  .chart-container {
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .chart-title {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-semibold);
+    margin-bottom: var(--spacing-md);
+    color: var(--color-text-primary);
+  }
+  
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+  }
+  
+  .stat-card {
+    background: var(--color-bg-primary);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+  }
+  
+  .stat-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    margin-bottom: var(--spacing-xs);
+  }
+  
+  .stat-value {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-text-primary);
+  }
+  
+  .ml-insights-panel {
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border-light);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+  }
+  
+  .ml-insights-panel.hidden {
+    display: none;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+  <div class="analytics-header">
+    <div>
+      <h1 style="margin: 0 0 var(--spacing-xs) 0;">Analytics Dashboard</h1>
+      <p style="margin: 0; color: var(--color-text-secondary);">Comprehensive insights into your security scans and findings</p>
+    </div>
+    <div style="display: flex; gap: var(--spacing-sm); align-items: center; flex-wrap: wrap;">
+      <div class="time-range-selector">
+        <label for="time-range" style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">Time Range:</label>
+        <select id="time-range" class="form-select" style="min-width: 120px;">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="custom">Custom</option>
+        </select>
+      </div>
+      <button onclick="exportAnalytics('csv')" class="btn btn-secondary">Export CSV</button>
+      <button onclick="exportAnalytics('json')" class="btn btn-secondary">Export JSON</button>
+      <button onclick="exportAnalytics('pdf')" class="btn btn-secondary">Export PDF</button>
+    </div>
+  </div>
+
+  <!-- Summary Statistics -->
+  <div class="stats-grid" id="summary-stats">
+    <div class="stat-card">
+      <div class="stat-label">Total Scans</div>
+      <div class="stat-value" id="stat-total-scans">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Findings</div>
+      <div class="stat-value" id="stat-total-findings">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pass Rate</div>
+      <div class="stat-value" id="stat-pass-rate">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Risk Score</div>
+      <div class="stat-value" id="stat-risk-score">-</div>
+    </div>
+  </div>
+
+  <!-- Trend Analysis Chart -->
+  <div class="chart-container">
+    <div class="chart-title">Findings Trend Over Time</div>
+    <canvas id="trend-chart"></canvas>
+  </div>
+
+  <!-- Severity Distribution Chart -->
+  <div class="chart-container">
+    <div class="chart-title">Severity Distribution</div>
+    <canvas id="severity-chart"></canvas>
+  </div>
+
+  <!-- Scanner Effectiveness Chart -->
+  <div class="chart-container">
+    <div class="chart-title">Scanner Effectiveness</div>
+    <canvas id="scanner-chart"></canvas>
+  </div>
+
+  <!-- Remediation Progress Chart -->
+  <div class="chart-container">
+    <div class="chart-title">Remediation Progress</div>
+    <canvas id="remediation-chart"></canvas>
+  </div>
+
+  <!-- Risk Scores Chart -->
+  <div class="chart-container">
+    <div class="chart-title">Risk Scores by Severity</div>
+    <canvas id="risk-chart"></canvas>
+  </div>
+
+  <!-- ML Insights Panel (if enabled) -->
+  <div id="ml-insights-panel" class="ml-insights-panel hidden">
+    <h2 style="margin: 0 0 var(--spacing-md) 0;">ML Insights</h2>
+    <div id="ml-insights-content">
+      <p>Loading ML insights...</p>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/analytics.js"></script>
+{% endblock %}
+
