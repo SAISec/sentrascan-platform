@@ -3,12 +3,15 @@ import time
 import subprocess
 import requests
 import pytest
+import uuid
+from datetime import datetime
 from sentrascan.core.storage import SessionLocal
-from sentrascan.core.models import Tenant, User, APIKey
+from sentrascan.core.models import Tenant, User, APIKey, Scan, Finding, Baseline, SBOM
 from sentrascan.core.auth import create_user, PasswordHasher
 from sentrascan.server import generate_api_key
 
 API_BASE = os.environ.get("SENTRASCAN_API_BASE", "http://localhost:8200")
+SESSION_COOKIE_NAME = os.environ.get("SENTRASCAN_SESSION_COOKIE", "ss_session")
 
 @pytest.fixture(scope="session")
 def wait_api():
