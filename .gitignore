@@ -33,6 +33,11 @@ data/
 *.sqlite
 *.sqlite3
 
+# Telemetry
+telemetry/
+telemetry/archive/
+telemetry/events.jsonl
+
 # Docker
 .dockerignore
 
@@ -62,8 +67,10 @@ picklescan/
 proximity/
 watchtower/
 
+
+
 # Temporary files
 *.tmp
 *.bak
 *.swp
-telemetry/events.jsonl
+
