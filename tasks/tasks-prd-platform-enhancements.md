@@ -267,22 +267,22 @@ Based on: `prd-platform-enhancements.md`
   - [x] 5.26 Ensure ML models do NOT learn from customer data
   - [x] 5.27 Add ML insights panel to analytics dashboard (if ML features enabled)
   - [x] 5.28 Add feature flag to enable/disable ML features
-  - [ ] 5.29 Create documentation structure in `/docs` directory
-  - [ ] 5.30 Create getting started guide (`docs/getting-started/README.md`)
-  - [ ] 5.31 Create user guide (`docs/user-guide/README.md`)
-  - [ ] 5.32 Create API documentation (`docs/api/README.md`)
-  - [ ] 5.33 Create how-to guides (`docs/how-to/README.md`)
-  - [ ] 5.34 Create troubleshooting guide (`docs/troubleshooting/README.md`)
-  - [ ] 5.35 Create FAQ (`docs/faq/README.md`)
-  - [ ] 5.36 Create best practices guide (`docs/best-practices/README.md`)
-  - [ ] 5.37 Create glossary (`docs/glossary/README.md`)
-  - [ ] 5.38 Create documentation viewer page (`docs.html`) with markdown rendering
-  - [ ] 5.39 Implement markdown rendering with syntax highlighting (Prism.js or highlight.js)
-  - [ ] 5.40 Add table of contents navigation sidebar
-  - [ ] 5.41 Implement full-text search across documentation
-  - [ ] 5.42 Add "How To" link to main navigation in `base.html`
-  - [ ] 5.43 Ensure documentation is accessible (WCAG 2.1 AA compliant)
-  - [ ] 5.44 Add print-friendly CSS for documentation
+  - [x] 5.29 Create documentation structure in `/docs` directory
+  - [x] 5.30 Create getting started guide (`docs/getting-started/README.md`)
+  - [x] 5.31 Create user guide (`docs/user-guide/README.md`)
+  - [x] 5.32 Create API documentation (`docs/api/README.md`)
+  - [x] 5.33 Create how-to guides (`docs/how-to/README.md`)
+  - [x] 5.34 Create troubleshooting guide (`docs/troubleshooting/README.md`)
+  - [x] 5.35 Create FAQ (`docs/faq/README.md`)
+  - [x] 5.36 Create best practices guide (`docs/best-practices/README.md`)
+  - [x] 5.37 Create glossary (`docs/glossary/README.md`)
+  - [x] 5.38 Create documentation viewer page (`docs.html`) with markdown rendering
+  - [x] 5.39 Implement markdown rendering with syntax highlighting (Prism.js or highlight.js)
+  - [x] 5.40 Add table of contents navigation sidebar
+  - [x] 5.41 Implement full-text search across documentation
+  - [x] 5.42 Add "How To" link to main navigation in `base.html`
+  - [x] 5.43 Ensure documentation is accessible (WCAG 2.1 AA compliant)
+  - [x] 5.44 Add print-friendly CSS for documentation
   - [x] 5.45 **DELTA TESTING - Section 5.0**: Test tenant settings (all setting types, validation, defaults), analytics engine (trends, distributions, metrics, remediation tracking, risk scoring, time range filtering, tenant-scoping, export), ML insights (anomaly detection, risk scoring, correlation, prioritization, no customer data learning, feature flag), documentation (structure, markdown rendering, navigation, search, accessibility) - **27/27 tests passing (5 skipped for ML when scikit-learn not available)**
   - [x] 5.46 **REGRESSION TESTING - Section 5.0**: Run existing test suite and verify scan creation/execution (with tenant settings), findings display (with analytics integration), API endpoints, user/tenant management, RBAC, logging/telemetry, security controls, dashboard statistics (with analytics engine), tenant isolation (with tenant settings), and all sections 1.0-4.0 features still work - **All tests passing**
   - [x] 5.47 **FINAL REGRESSION TESTING**: Run complete end-to-end test suite covering all sections (1.0-5.0), test complete user workflows (login → scan → analytics), test multi-tenant scenarios end-to-end, verify all PRD requirements are met, create comprehensive test report - **Test summary created: tests/TEST_SECTION5_SUMMARY.md**
