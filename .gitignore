@@ -66,3 +66,4 @@ watchtower/
 *.tmp
 *.bak
 *.swp
+telemetry/events.jsonl
