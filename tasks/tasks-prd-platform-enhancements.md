@@ -47,6 +47,10 @@ Based on: `prd-platform-enhancements.md`
 - `src/sentrascan/web/static/js/docs.js` - New file for documentation viewer JavaScript
 - `src/sentrascan/web/static/js/findings.js` - New file for findings aggregation JavaScript
 
+### Security Scanning Scripts
+- `scripts/security-scan-dependencies.sh` - Python dependency vulnerability scanning script (safety, pip-audit, outdated packages)
+- `scripts/security-scan-container.sh` - Docker image security scanning script (docker scan, trivy)
+
 ### Configuration & Infrastructure Files
 - `Dockerfile` - Main Dockerfile (remove ZAP, remove test dependencies)
 - `Dockerfile.production` - New file for production-only Dockerfile
@@ -65,6 +69,7 @@ Based on: `prd-platform-enhancements.md`
 - `docs/faq/README.md` - New file for FAQ
 - `docs/best-practices/README.md` - New file for best practices
 - `docs/glossary/README.md` - New file for glossary
+- `docs/SECURITY-AUDIT-AUTH-AUTHZ.md` - Comprehensive security audit document for authentication and authorization flows
 
 ### Test Files
 - `tests/test_models.py` - Tests for database models (add tenant, user, settings tests)
@@ -79,7 +84,8 @@ Based on: `prd-platform-enhancements.md`
 - `tests/test_session.py` - Unit tests for session management (17 tests)
 - `tests/test_integration.py` - Comprehensive integration tests covering 17 test scenarios (API flows, authentication, authorization, tenant isolation, error handling, rate limiting, database schema, sharding, encryption, data isolation, session persistence, API key workflows, user management, tenant settings, analytics, scan execution, findings storage)
 - `tests/test_performance.py` - New file for performance tests
-- `tests/test_security.py` - New file for security tests
+- `tests/test_security.py` - Comprehensive security tests covering password policies, MFA, session management, RBAC, API key validation, SQL injection prevention, XSS prevention, CSRF protection, input validation, output encoding, encryption at rest, data masking, secure deletion, tenant isolation, rate limiting, secrets management, and penetration test findings (S-01 through S-06, D-01, D-02) including default credentials, API key hashing security, auth error handling, Argon2 password hashing, function-level authorization (BFLA), tenant isolation/IDOR prevention, require_api_key usage, and circular import prevention (24 test classes, 62 test methods)
+- `tests/SECURITY_TEST_REPORT.md` - Comprehensive security test report documenting all test classes and methods, test results by category, penetration test findings coverage, test execution instructions, recommendations, and test maintenance procedures
 - `tests/test_acceptance.py` - New file for acceptance tests
 - `tests/conftest.py` - Pytest configuration with fixtures for tenants, users, API keys, scans, findings, baselines, SBOMs
 - `tests/UNIT_TEST_SUMMARY.md` - Documentation for unit test setup and coverage configuration
@@ -133,7 +139,7 @@ Based on: `prd-platform-enhancements.md`
   - [x] 1.19 **DELTA TESTING - Section 1.0**: Test footer copyright, statistics cards layout, API key generation/UI, findings display (aggregate and detail views) - Test files created: `tests/test_section1_delta.py` - **34/35 tests passing (1 skipped)**
   - [x] 1.20 **REGRESSION TESTING - Section 1.0**: Run existing test suite and verify scan creation/execution, API endpoints, database queries, baseline/SBOM functionality still work - Test files created: `tests/test_section1_regression.py` - **All 19 tests passing**
 
-- [ ] 2.0 Logging, Telemetry & Container Optimization
+- [x] 2.0 Logging, Telemetry & Container Optimization
   - [x] 2.1 Create structured logging module (`core/logging.py`) using `structlog` library (preferred) with JSON output formatter
   - [x] 2.2 Implement JSON-formatted logging to stdout/stderr (integrated in logging.py)
   - [x] 2.3 Configure log levels via environment variable (`LOG_LEVEL`) (integrated in logging.py)
@@ -361,10 +367,14 @@ Based on: `prd-platform-enhancements.md`
     - [x] Includes resource usage benchmarks
     - [x] Includes recommendations for optimization and monitoring
 
-- [ ] 9.0 Security Testing
-  - [ ] 9.1 Write security tests in `test_security.py` for: (1) Password policies (min 12 chars, complexity, expiration), (2) MFA implementation (TOTP setup, verification, bypass attempts), (3) Session management (session timeout, secure cookies, session fixation), (4) RBAC (role-based access control, privilege escalation attempts), (5) API key validation (format validation, revocation, expiration), (6) SQL injection prevention (test with malicious SQL in inputs), (7) XSS prevention (test with script tags in inputs), (8) CSRF protection (verify CSRF tokens required), (9) Input validation (test with malformed inputs, oversized payloads), (10) Output encoding (verify HTML/JS encoding in responses), (11) Encryption at rest (verify data encrypted in database), (12) Encryption in transit (verify TLS 1.3 enforced), (13) Data masking in logs (verify sensitive data masked), (14) Secure data deletion (verify soft-deleted data not accessible), (15) Tenant isolation (verify cross-tenant access prevented), (16) Rate limiting (verify limits enforced, bypass attempts fail), (17) Secrets management (verify secrets never in code/logs)
-  - [ ] 9.2 Perform dependency vulnerability scanning, container image security scanning, manual security audit of authentication and authorization flows
-  - [ ] 9.3 Document security test results and create security test reports
+- [x] 9.0 Security Testing
+  - [x] 9.1 Write security tests in `test_security.py` for: (1) Password policies (min 12 chars, complexity, expiration), (2) MFA implementation (TOTP setup, verification, bypass attempts), (3) Session management (session timeout, secure cookies, session fixation), (4) RBAC (role-based access control, privilege escalation attempts), (5) API key validation (format validation, revocation, expiration), (6) SQL injection prevention (test with malicious SQL in inputs), (7) XSS prevention (test with script tags in inputs), (8) CSRF protection (verify CSRF tokens required), (9) Input validation (test with malformed inputs, oversized payloads), (10) Output encoding (verify HTML/JS encoding in responses), (11) Encryption at rest (verify data encrypted in database), (12) Encryption in transit (verify TLS 1.3 enforced), (13) Data masking in logs (verify sensitive data masked), (14) Secure data deletion (verify soft-deleted data not accessible), (15) Tenant isolation (verify cross-tenant access prevented), (16) Rate limiting (verify limits enforced, bypass attempts fail), (17) Secrets management (verify secrets never in code/logs)
+  - [x] 9.2 Perform dependency vulnerability scanning, container image security scanning, manual security audit of authentication and authorization flows
+    - [x] Created `scripts/security-scan-dependencies.sh` for Python dependency vulnerability scanning (safety, pip-audit, outdated packages)
+    - [x] Created `scripts/security-scan-container.sh` for Docker image security scanning (docker scan, trivy)
+    - [x] Created comprehensive security audit document `docs/SECURITY-AUDIT-AUTH-AUTHZ.md` covering authentication flows (user registration, login, API key auth, session management, MFA), authorization flows (RBAC, tenant isolation, function-level auth), security controls (password policies, account lockout, rate limiting, CSRF, input validation), identified issues (S-01 through S-06, D-01, D-02), recommendations, testing recommendations, OWASP Top 10 coverage, and endpoint permission matrix
+  - [x] 9.3 Document security test results and create security test reports
+    - [x] Created comprehensive security test report `tests/SECURITY_TEST_REPORT.md` documenting all 24 test classes and 62 test methods, test results by category (17 security areas), penetration test findings coverage (S-01 through S-06, D-01, D-02), test execution instructions, test results summary, recommendations (high/medium/low priority), test maintenance procedures, and conclusion with next steps
 
 - [ ] 10.0 Acceptance Testing
   - [ ] 10.1 Create acceptance test plan based on user stories from PRD
