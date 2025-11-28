@@ -183,7 +183,7 @@ class TestDatabaseQueryPerformance:
         ).delete()
         db_session.commit()
     
-    def test_join_query_performance(self, db_session, performance_tenant, benchmark):
+    def test_join_query_performance(self, db_session, performance_tenant, benchmark=None):
         """Test JOIN query performance"""
         # Create scan with findings
         scan = Scan(
@@ -263,7 +263,7 @@ class TestShardRoutingPerformance:
         os.environ.get("DATABASE_URL", "").startswith("sqlite"),
         reason="Sharding requires PostgreSQL"
     )
-    def test_shard_routing_overhead(self, benchmark):
+    def test_shard_routing_overhead(self, benchmark=None):
         """Test that shard routing adds minimal overhead"""
         tenant_ids = [f"tenant-{i}" for i in range(100)]
         
@@ -296,7 +296,7 @@ class TestShardRoutingPerformance:
 class TestEncryptionPerformance:
     """Test 4: Encryption/decryption overhead"""
     
-    def test_encryption_overhead(self, performance_tenant, benchmark):
+    def test_encryption_overhead(self, performance_tenant, benchmark=None):
         """Test that encryption adds minimal overhead"""
         os.environ["ENCRYPTION_MASTER_KEY"] = "test-master-key-32-chars-long!!"
         
