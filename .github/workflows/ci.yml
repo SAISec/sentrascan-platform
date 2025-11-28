@@ -1,0 +1,22 @@
+# CI/CD Workflow - DISABLED
+# This workflow is disabled and will not run on any events.
+# To re-enable, uncomment the 'on:' section below and configure the triggers.
+
+name: CI/CD Tests
+
+# DISABLED: No triggers configured - workflow will not run
+# on:
+#   push:
+#     branches: [ main, develop ]
+#   pull_request:
+#     branches: [ main, develop ]
+
+# Workflow is disabled - no jobs will run
+jobs:
+  disabled:
+    name: Workflow Disabled
+    runs-on: ubuntu-latest
+    steps:
+      - name: Workflow is disabled
+        run: echo "This workflow is disabled. No tests will run."
+
