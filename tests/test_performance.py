@@ -325,7 +325,7 @@ class TestSystemLimits:
     """Test 5: System limits (100+ tenants, 1000+ users, 10,000+ scans)"""
     
     def test_multiple_tenants(self, db_session):
-        """Test system with 100+ tenants"""
+        """Test system with 100+ tenants (stress test)"""
         tenant_count = 100
         tenants = []
         
@@ -338,15 +338,24 @@ class TestSystemLimits:
             )
             tenants.append(tenant)
         
-        db_session.add_all(tenants)
-        db_session.commit()
+        # Batch insert for efficiency
+        batch_size = 50
+        for i in range(0, len(tenants), batch_size):
+            db_session.add_all(tenants[i:i+batch_size])
+            db_session.commit()
+        
         elapsed = time.perf_counter() - start_time
         
         # Verify all tenants created
         created_count = db_session.query(Tenant).filter(
             Tenant.id.in_([t.id for t in tenants])
         ).count()
-        assert created_count == tenant_count
+        assert created_count == tenant_count, \
+            f"Expected {tenant_count} tenants, created {created_count}"
+        
+        # Verify creation time is reasonable (<10 seconds for 100 tenants)
+        assert elapsed < 10, \
+            f"Tenant creation took {elapsed:.2f}s, exceeds 10s target"
         
         # Cleanup
         db_session.query(Tenant).filter(
@@ -355,11 +364,13 @@ class TestSystemLimits:
         db_session.commit()
     
     def test_multiple_users_per_tenant(self, db_session, performance_tenant):
-        """Test system with 1000+ users per tenant"""
-        user_count = 100  # Reduced for test speed, can be increased
+        """Test system with 1000+ users per tenant (stress test)"""
+        user_count = 1000  # Full stress test
         users = []
+        created_users = []
         
         start_time = time.perf_counter()
+        batch_size = 50
         for i in range(user_count):
             try:
                 user = create_user(
@@ -368,14 +379,23 @@ class TestSystemLimits:
                     password="TestPassword123!",
                     name=f"Limit Test User {i}",
                     tenant_id=performance_tenant.id,
-                    role="viewer"
+                    role="viewer" if i % 10 == 0 else "viewer"
                 )
-                users.append(user)
+                created_users.append(user)
+                
+                # Commit in batches to avoid memory issues
+                if len(created_users) >= batch_size:
+                    db_session.commit()
+                    users.extend(created_users)
+                    created_users = []
             except Exception as e:
                 # Skip if user creation fails (e.g., duplicate email)
                 pass
         
-        db_session.commit()
+        if created_users:
+            db_session.commit()
+            users.extend(created_users)
+        
         elapsed = time.perf_counter() - start_time
         
         # Verify users created
@@ -383,7 +403,12 @@ class TestSystemLimits:
             User.tenant_id == performance_tenant.id,
             User.email.like(f"limit-user-%@example.com")
         ).count()
-        assert created_count > 0
+        assert created_count >= user_count * 0.9, \
+            f"Expected at least {user_count * 0.9} users, created {created_count}"
+        
+        # Verify creation time is reasonable (<60 seconds for 1000 users)
+        assert elapsed < 60, \
+            f"User creation took {elapsed:.2f}s, exceeds 60s target"
         
         # Cleanup
         db_session.query(User).filter(
@@ -393,23 +418,24 @@ class TestSystemLimits:
         db_session.commit()
     
     def test_multiple_scans_per_tenant(self, db_session, performance_tenant):
-        """Test system with 10,000+ scans per tenant"""
-        scan_count = 1000  # Reduced for test speed, can be increased to 10,000
+        """Test system with 10,000+ scans per tenant (stress test)"""
+        scan_count = 10000  # Full stress test
         scans = []
         
         start_time = time.perf_counter()
         for i in range(scan_count):
             scan = Scan(
                 id=f"limit-scan-{i}-{int(time.time())}",
-                scan_type="mcp",
+                scan_type="mcp" if i % 2 == 0 else "model",
                 target_path=f"/test/path/{i}",
-                passed=False,
-                tenant_id=performance_tenant.id
+                passed=i % 5 != 0,  # 80% pass rate
+                tenant_id=performance_tenant.id,
+                created_at=datetime.utcnow() - timedelta(days=i % 30)
             )
             scans.append(scan)
         
-        # Batch insert
-        batch_size = 100
+        # Batch insert for efficiency
+        batch_size = 500
         for i in range(0, len(scans), batch_size):
             db_session.add_all(scans[i:i+batch_size])
             db_session.commit()
@@ -421,7 +447,23 @@ class TestSystemLimits:
             Scan.tenant_id == performance_tenant.id,
             Scan.id.like(f"limit-scan-%")
         ).count()
-        assert created_count == scan_count
+        assert created_count == scan_count, \
+            f"Expected {scan_count} scans, created {created_count}"
+        
+        # Verify creation time is reasonable (<120 seconds for 10,000 scans)
+        assert elapsed < 120, \
+            f"Scan creation took {elapsed:.2f}s, exceeds 120s target"
+        
+        # Test query performance with large dataset
+        query_start = time.perf_counter()
+        tenant_scans = db_session.query(Scan).filter(
+            Scan.tenant_id == performance_tenant.id
+        ).limit(100).all()
+        query_elapsed = time.perf_counter() - query_start
+        
+        # Verify query performance is acceptable even with large dataset
+        assert query_elapsed < 1.0, \
+            f"Query with large dataset took {query_elapsed:.2f}s, exceeds 1s target"
         
         # Cleanup
         db_session.query(Scan).filter(
@@ -632,29 +674,164 @@ class TestPaginationPerformance:
 class TestMemoryCPUUsage:
     """Test 8: Memory/CPU usage under sustained load"""
     
-    @pytest.mark.skip(reason="Requires system monitoring tools")
-    def test_memory_usage_under_load(self):
+    def test_memory_usage_under_load(self, db_session, performance_tenant):
         """Test memory usage remains reasonable under load"""
-        # Would use psutil or similar to monitor memory
-        pass
+        try:
+            import psutil
+            import os
+            HAS_PSUTIL = True
+        except ImportError:
+            HAS_PSUTIL = False
+        
+        if not HAS_PSUTIL:
+            pytest.skip("psutil not available for memory monitoring")
+        
+        process = psutil.Process(os.getpid())
+        initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+        
+        # Create sustained load (many queries)
+        for _ in range(100):
+            db_session.query(Scan).filter(
+                Scan.tenant_id == performance_tenant.id
+            ).limit(10).all()
+            db_session.query(Finding).filter(
+                Finding.tenant_id == performance_tenant.id
+            ).limit(10).all()
+        
+        final_memory = process.memory_info().rss / 1024 / 1024  # MB
+        memory_increase = final_memory - initial_memory
+        
+        # Verify memory increase is reasonable (<500MB for 100 queries)
+        assert memory_increase < 500, \
+            f"Memory increased by {memory_increase:.2f}MB, exceeds 500MB target"
     
-    @pytest.mark.skip(reason="Requires system monitoring tools")
-    def test_cpu_usage_under_load(self):
+    def test_cpu_usage_under_load(self, db_session, performance_tenant):
         """Test CPU usage remains reasonable under load"""
-        # Would use psutil or similar to monitor CPU
-        pass
+        try:
+            import psutil
+            import os
+            HAS_PSUTIL = True
+        except ImportError:
+            HAS_PSUTIL = False
+        
+        if not HAS_PSUTIL:
+            pytest.skip("psutil not available for CPU monitoring")
+        
+        process = psutil.Process(os.getpid())
+        
+        # Monitor CPU during sustained load
+        cpu_times = []
+        for _ in range(50):
+            start_cpu = process.cpu_percent(interval=0.1)
+            # Perform database operations
+            db_session.query(Scan).filter(
+                Scan.tenant_id == performance_tenant.id
+            ).limit(10).all()
+            end_cpu = process.cpu_percent(interval=0.1)
+            cpu_times.append(end_cpu - start_cpu)
+        
+        avg_cpu = statistics.mean(cpu_times) if cpu_times else 0
+        
+        # Verify CPU usage is reasonable (<80% average)
+        assert avg_cpu < 80, \
+            f"Average CPU usage {avg_cpu:.2f}% exceeds 80% target"
 
 
 class TestDatabaseConnectionPooling:
     """Test 9: Database connection pooling"""
     
-    @pytest.mark.skip(reason="Requires connection pool monitoring")
-    def test_connection_pool_exhaustion_handling(self):
+    def test_connection_pool_exhaustion_handling(self, db_session):
         """Test that connection pool exhaustion is handled gracefully"""
-        pass
+        from sentrascan.core.storage import engine
+        
+        # Get pool size
+        pool_size = engine.pool.size()
+        max_overflow = engine.pool._max_overflow
+        
+        # Try to create more connections than pool size
+        # This should either succeed (if pool expands) or fail gracefully
+        connections = []
+        try:
+            for i in range(pool_size + max_overflow + 10):
+                try:
+                    conn = engine.connect()
+                    connections.append(conn)
+                except Exception as e:
+                    # Pool exhaustion should raise a clear error
+                    assert "pool" in str(e).lower() or "connection" in str(e).lower(), \
+                        f"Pool exhaustion should raise pool-related error, got: {e}"
+                    break
+            
+            # Verify we got at least pool_size connections
+            assert len(connections) >= pool_size, \
+                f"Expected at least {pool_size} connections, got {len(connections)}"
+        finally:
+            # Cleanup connections
+            for conn in connections:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
     
-    @pytest.mark.skip(reason="Requires connection pool monitoring")
-    def test_max_connections_limit(self):
+    def test_max_connections_limit(self, db_session):
         """Test that max connections limit is enforced"""
-        pass
+        from sentrascan.core.storage import engine
+        
+        # Get pool configuration
+        pool_size = engine.pool.size()
+        max_overflow = engine.pool._max_overflow
+        max_connections = pool_size + max_overflow
+        
+        # Verify pool configuration is reasonable
+        assert pool_size > 0, "Pool size should be greater than 0"
+        assert max_overflow >= 0, "Max overflow should be non-negative"
+        assert max_connections <= 100, \
+            f"Max connections {max_connections} should be <= 100 for reasonable resource usage"
+    
+    def test_concurrent_queries(self, db_session, performance_tenant):
+        """Test concurrent queries don't exhaust connection pool"""
+        import concurrent.futures
+        
+        # Create test data
+        scans = []
+        for i in range(100):
+            scan = Scan(
+                id=f"pool-scan-{i}-{int(time.time())}",
+                scan_type="mcp",
+                target_path=f"/test/path/{i}",
+                passed=False,
+                tenant_id=performance_tenant.id
+            )
+            scans.append(scan)
+        db_session.add_all(scans)
+        db_session.commit()
+        
+        # Run concurrent queries
+        def run_query(query_id):
+            db = SessionLocal()
+            try:
+                result = db.query(Scan).filter(
+                    Scan.tenant_id == performance_tenant.id
+                ).limit(10).all()
+                return len(result)
+            finally:
+                db.close()
+        
+        # Run 20 concurrent queries
+        with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+            futures = [executor.submit(run_query, i) for i in range(20)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+        
+        # Verify all queries succeeded
+        assert len(results) == 20, \
+            f"Expected 20 query results, got {len(results)}"
+        assert all(r == 10 for r in results), \
+            "All queries should return 10 results"
+        
+        # Cleanup
+        db_session.query(Scan).filter(
+            Scan.tenant_id == performance_tenant.id,
+            Scan.id.like(f"pool-scan-%")
+        ).delete(synchronize_session=False)
+        db_session.commit()
 

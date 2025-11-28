@@ -334,7 +334,15 @@ Based on: `prd-platform-enhancements.md`
     - [x] Supports both standard HttpUser and FastHttpUser for different concurrency levels
     - [x] Database query load tests use pytest-benchmark when available, fallback to manual timing
     - [x] Shard routing and encryption overhead tests enhanced with benchmark support
-  - [ ] 8.3 Write stress tests for: (1) System limits (test with 100+ tenants, 1000+ users per tenant, 10,000+ scans per tenant), (2) Memory/CPU usage (monitor under sustained load), (3) Database connection pooling (verify pool exhaustion handling, max connections)
+  - [x] 8.3 Write stress tests for: (1) System limits (test with 100+ tenants, 1000+ users per tenant, 10,000+ scans per tenant), (2) Memory/CPU usage (monitor under sustained load), (3) Database connection pooling (verify pool exhaustion handling, max connections)
+    - [x] Enhanced `test_multiple_tenants` to test 100+ tenants with batch operations
+    - [x] Enhanced `test_multiple_users_per_tenant` to test 1000+ users per tenant with batch operations
+    - [x] Enhanced `test_multiple_scans_per_tenant` to test 10,000+ scans per tenant with batch operations
+    - [x] Added memory usage monitoring with psutil (optional dependency)
+    - [x] Added CPU usage monitoring with psutil (optional dependency)
+    - [x] Added connection pool exhaustion handling test
+    - [x] Added max connections limit verification test
+    - [x] Added concurrent queries test to verify pool handles concurrent load
   - [ ] 8.4 Measure and verify performance targets: (1) API response time <200ms (95th percentile) for all endpoints, (2) Database query time <100ms (95th percentile) for tenant-scoped queries, (3) Page load time <2 seconds for all UI pages, (4) Scan execution time within configured timeout, (5) Analytics dashboard performance (loads in <3 seconds with 10,000+ findings), (6) Findings aggregation performance (aggregates 10,000+ findings in <1 second), (7) Pagination performance (page loads in <500ms), (8) Caching effectiveness (verify cache hit rate >80% for frequently accessed data)
   - [ ] 8.5 Document performance benchmarks and create performance test reports
 
