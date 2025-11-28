@@ -37,6 +37,9 @@ data/
 telemetry/
 telemetry/archive/
 telemetry/events.jsonl
+# Ignore events.jsonl files anywhere
+events.jsonl
+*.jsonl
 
 # Docker
 .dockerignore
