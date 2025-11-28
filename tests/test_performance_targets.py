@@ -86,25 +86,24 @@ def performance_tenant(db_session):
 class TestAPIPerformanceTargets:
     """Test 1: API response time <200ms (95th percentile) for all endpoints"""
     
-    @pytest.mark.skip(reason="Requires API server running and load testing tool")
+    @pytest.mark.skip(reason="Use test_api_performance.py for actual API testing")
     def test_api_response_time_target(self):
         """Verify API endpoints respond within 200ms (95th percentile)"""
-        # This would use locust or similar tool
-        # Run: locust -f tests/locustfile.py --host=http://localhost:8200 --users=100 --spawn-rate=10 --run-time=60s
-        # Then verify 95th percentile response time <200ms
+        # Use test_api_performance.py for actual API testing
+        # Run: pytest tests/test_api_performance.py -v
         pass
     
-    @pytest.mark.skip(reason="Requires API server running")
+    @pytest.mark.skip(reason="Use test_api_performance.py for actual API testing")
     def test_scans_endpoint_response_time(self):
         """Test /api/v1/scans endpoint response time"""
         pass
     
-    @pytest.mark.skip(reason="Requires API server running")
+    @pytest.mark.skip(reason="Use test_api_performance.py for actual API testing")
     def test_findings_endpoint_response_time(self):
         """Test /api/v1/findings endpoint response time"""
         pass
     
-    @pytest.mark.skip(reason="Requires API server running")
+    @pytest.mark.skip(reason="Use test_api_performance.py for actual API testing")
     def test_api_keys_endpoint_response_time(self):
         """Test /api/v1/api-keys endpoint response time"""
         pass

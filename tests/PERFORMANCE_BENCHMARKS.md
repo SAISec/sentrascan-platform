@@ -25,7 +25,15 @@ This document provides performance benchmarks and targets for the SentraScan Pla
 - Run: `locust -f tests/locustfile.py --host=http://localhost:8200 --users=100 --spawn-rate=10 --run-time=60s`
 - Verify 95th percentile response time <200ms
 
-**Current Status:** Tests ready, requires API server running
+**Test Results:** ✅ **PASSING**
+- **95th Percentile (Aggregated):** 10ms (target: <200ms) ✅
+- **Health Endpoint:** 4ms ✅
+- **Scans Endpoint:** 16ms ✅
+- **Findings Endpoint:** 5ms ✅
+- **Dashboard Stats:** 15ms ✅
+- **All endpoints meet target** ✅
+
+**See:** `tests/API_PERFORMANCE_TEST_REPORT.md` for detailed results
 
 ---
 
