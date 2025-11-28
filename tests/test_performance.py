@@ -183,7 +183,7 @@ class TestDatabaseQueryPerformance:
         ).delete()
         db_session.commit()
     
-    def test_join_query_performance(self, db_session, performance_tenant, benchmark=None):
+    def test_join_query_performance(self, db_session, performance_tenant):
         """Test JOIN query performance"""
         # Create scan with findings
         scan = Scan(
@@ -213,40 +213,24 @@ class TestDatabaseQueryPerformance:
         db_session.add_all(findings)
         db_session.commit()
         
-        # Measure JOIN query time with benchmark or manual timing
-        if HAS_BENCHMARK:
-            def join_query_func():
-                return db_session.query(Scan, Finding).join(
+        # Measure JOIN query time (manual timing)
+        times = []
+        for _ in range(10):
+            _, elapsed_ms = measure_time(
+                lambda: db_session.query(Scan, Finding).join(
                     Finding, Scan.id == Finding.scan_id
                 ).filter(
                     Scan.tenant_id == performance_tenant.id
                 ).all()
-            
-            result = benchmark.pedantic(
-                join_query_func,
-                rounds=10,
-                iterations=1
             )
-            assert result is not None
-        else:
-            # Fallback to manual timing
-            times = []
-            for _ in range(10):
-                _, elapsed_ms = measure_time(
-                    lambda: db_session.query(Scan, Finding).join(
-                        Finding, Scan.id == Finding.scan_id
-                    ).filter(
-                        Scan.tenant_id == performance_tenant.id
-                    ).all()
-                )
-                times.append(elapsed_ms)
-            
-            # Calculate 95th percentile
-            p95 = percentile(times, 95)
-            
-            # Verify target
-            assert p95 < DB_QUERY_TIME_TARGET_MS, \
-                f"95th percentile JOIN query time {p95:.2f}ms exceeds target {DB_QUERY_TIME_TARGET_MS}ms"
+            times.append(elapsed_ms)
+        
+        # Calculate 95th percentile
+        p95 = percentile(times, 95)
+        
+        # Verify target
+        assert p95 < DB_QUERY_TIME_TARGET_MS, \
+            f"95th percentile JOIN query time {p95:.2f}ms exceeds target {DB_QUERY_TIME_TARGET_MS}ms"
         
         # Cleanup
         db_session.query(Finding).filter(
@@ -263,40 +247,31 @@ class TestShardRoutingPerformance:
         os.environ.get("DATABASE_URL", "").startswith("sqlite"),
         reason="Sharding requires PostgreSQL"
     )
-    def test_shard_routing_overhead(self, benchmark=None):
+    def test_shard_routing_overhead(self):
         """Test that shard routing adds minimal overhead"""
         tenant_ids = [f"tenant-{i}" for i in range(100)]
         
-        if HAS_BENCHMARK:
-            # Use benchmark for load testing
-            result = benchmark.pedantic(
-                get_shard_id,
-                args=(tenant_ids[0],),
-                rounds=100,
-                iterations=10
-            )
-        else:
-            # Fallback to manual timing
-            times = []
-            for tenant_id in tenant_ids:
-                _, elapsed_ms = measure_time(get_shard_id, tenant_id)
-                times.append(elapsed_ms)
-            
-            # Calculate average and max
-            avg_time = statistics.mean(times)
-            max_time = max(times)
-            
-            # Verify overhead is minimal
-            assert avg_time < SHARD_ROUTING_OVERHEAD_MS, \
-                f"Average shard routing time {avg_time:.2f}ms exceeds target {SHARD_ROUTING_OVERHEAD_MS}ms"
-            assert max_time < SHARD_ROUTING_OVERHEAD_MS * 2, \
-                f"Max shard routing time {max_time:.2f}ms exceeds target {SHARD_ROUTING_OVERHEAD_MS * 2}ms"
+        # Measure shard routing time (manual timing)
+        times = []
+        for tenant_id in tenant_ids:
+            _, elapsed_ms = measure_time(get_shard_id, tenant_id)
+            times.append(elapsed_ms)
+        
+        # Calculate average and max
+        avg_time = statistics.mean(times)
+        max_time = max(times)
+        
+        # Verify overhead is minimal
+        assert avg_time < SHARD_ROUTING_OVERHEAD_MS, \
+            f"Average shard routing time {avg_time:.2f}ms exceeds target {SHARD_ROUTING_OVERHEAD_MS}ms"
+        assert max_time < SHARD_ROUTING_OVERHEAD_MS * 2, \
+            f"Max shard routing time {max_time:.2f}ms exceeds target {SHARD_ROUTING_OVERHEAD_MS * 2}ms"
 
 
 class TestEncryptionPerformance:
     """Test 4: Encryption/decryption overhead"""
     
-    def test_encryption_overhead(self, performance_tenant, benchmark=None):
+    def test_encryption_overhead(self, performance_tenant):
         """Test that encryption adds minimal overhead"""
         os.environ["ENCRYPTION_MASTER_KEY"] = "test-master-key-32-chars-long!!"
         
@@ -307,55 +282,28 @@ class TestEncryptionPerformance:
             # Test data
             test_data = "sensitive-data-" * 100  # ~1.5KB
             
-            if HAS_BENCHMARK:
-                # Measure plaintext baseline
-                def plaintext_func():
-                    return test_data.encode('utf-8')
-                
-                plaintext_result = benchmark.pedantic(
-                    plaintext_func,
-                    rounds=10,
-                    iterations=1
+            # Measure plaintext operations (baseline)
+            plaintext_times = []
+            for _ in range(10):
+                _, elapsed_ms = measure_time(lambda: test_data.encode('utf-8'))
+                plaintext_times.append(elapsed_ms)
+            
+            # Measure encryption operations
+            encryption_times = []
+            for _ in range(10):
+                _, elapsed_ms = measure_time(
+                    encrypt_tenant_data, performance_tenant.id, test_data
                 )
-                
-                # Measure encryption
-                def encryption_func():
-                    return encrypt_tenant_data(performance_tenant.id, test_data)
-                
-                encryption_result = benchmark.pedantic(
-                    encryption_func,
-                    rounds=10,
-                    iterations=1
-                )
-                
-                # Benchmark provides timing, but we need to calculate overhead
-                # For now, just verify operations work
-                assert plaintext_result is not None
-                assert encryption_result is not None
-            else:
-                # Fallback to manual timing
-                # Measure plaintext operations (baseline)
-                plaintext_times = []
-                for _ in range(10):
-                    _, elapsed_ms = measure_time(lambda: test_data.encode('utf-8'))
-                    plaintext_times.append(elapsed_ms)
-                
-                # Measure encryption operations
-                encryption_times = []
-                for _ in range(10):
-                    _, elapsed_ms = measure_time(
-                        encrypt_tenant_data, performance_tenant.id, test_data
-                    )
-                    encryption_times.append(elapsed_ms)
-                
-                # Calculate overhead
-                avg_plaintext = statistics.mean(plaintext_times)
-                avg_encryption = statistics.mean(encryption_times)
-                overhead_percent = ((avg_encryption - avg_plaintext) / avg_plaintext) * 100 if avg_plaintext > 0 else 0
-                
-                # Verify overhead is acceptable
-                assert overhead_percent < ENCRYPTION_OVERHEAD_PERCENT, \
-                    f"Encryption overhead {overhead_percent:.2f}% exceeds target {ENCRYPTION_OVERHEAD_PERCENT}%"
+                encryption_times.append(elapsed_ms)
+            
+            # Calculate overhead
+            avg_plaintext = statistics.mean(plaintext_times)
+            avg_encryption = statistics.mean(encryption_times)
+            overhead_percent = ((avg_encryption - avg_plaintext) / avg_plaintext) * 100 if avg_plaintext > 0 else 0
+            
+            # Verify overhead is acceptable
+            assert overhead_percent < ENCRYPTION_OVERHEAD_PERCENT, \
+                f"Encryption overhead {overhead_percent:.2f}% exceeds target {ENCRYPTION_OVERHEAD_PERCENT}%"
         except Exception as e:
             pytest.skip(f"Encryption not configured: {e}")
     
