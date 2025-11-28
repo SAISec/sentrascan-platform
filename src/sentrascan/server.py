@@ -19,7 +19,7 @@ from sentrascan.modules.model.scanner import ModelScanner
 from sentrascan.modules.mcp.scanner import MCPScanner
 from sentrascan.core.policy import PolicyEngine
 from sentrascan.core.logging import configure_logging, get_logger
-from sentrascan.core.masking import mask_dict, mask_api_key
+from sentrascan.core.masking import mask_dict, mask_api_key, mask_email
 from sentrascan.core.telemetry import get_telemetry, initialize_telemetry
 from sentrascan.core.container_protection import check_container_access
 from sentrascan.core.log_retention import archive_old_logs, archive_telemetry
@@ -72,7 +72,11 @@ try:
 except Exception:
     pass  # Don't fail startup if archiving fails
 
-app = FastAPI(title="SentraScan Platform")
+app = FastAPI(
+    title="SentraScan Platform",
+    docs_url=None,  # Disable automatic Swagger UI at /docs
+    redoc_url=None  # Disable automatic ReDoc at /redoc
+)
 
 # Logging middleware
 class LoggingMiddleware(BaseHTTPMiddleware):
@@ -196,6 +200,7 @@ def _get_user_from_session(signed_cookie: str, db: Session):
     """
     Get user from session cookie (supports both APIKey and User).
     Uses new session management for User sessions, legacy for APIKey.
+    Returns User object or APIKey object (which has role attribute).
     """
     # Try new session management first
     user = get_session_user_from_session(signed_cookie, db)
@@ -215,12 +220,13 @@ def _get_user_from_session(signed_cookie: str, db: Session):
     # Legacy: API key session
     if signed_value:
         rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(signed_value), APIKey.is_revoked == False).first()
-    
-    # Check expiration
-    if rec and rec.expires_at and datetime.utcnow() > rec.expires_at:
-        logger.warning("api_key_expired", api_key_id=rec.id)
-        raise HTTPException(401, "API key has expired")
-        return rec
+        if rec:
+            # Check expiration
+            if rec.expires_at and datetime.utcnow() > rec.expires_at:
+                logger.warning("api_key_expired", api_key_id=rec.id)
+                raise HTTPException(401, "API key has expired")
+            # Return APIKey object - it has role attribute for RBAC
+            return rec
     
     return None
 
@@ -1148,39 +1154,120 @@ def ui_login(request: Request):
     return templates.TemplateResponse("login.html", {"request": request, "error": None})
 
 @app.post("/login")
-def ui_login_post(request: Request, response: Response, api_key: str = Form(...)):
+def ui_login_post(
+    request: Request, 
+    response: Response, 
+    email: str = Form(None),
+    password: str = Form(None),
+    api_key: str = Form(None)
+):
+    """
+    Handle login with either email/password or API key authentication.
+    """
     db = get_db_session()
     try:
-        masked_key = mask_api_key(api_key)
-        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-        if not rec:
-            logger.warning(
-                "login_failed",
-                reason="invalid_api_key",
+        # Determine authentication method
+        if email and password:
+            # User authentication with email/password
+            try:
+                user = authenticate_user(db, email, password)
+                if not user:
+                    logger.warning(
+                        "login_failed",
+                        reason="invalid_credentials",
+                        email=mask_email(email),
+                        client_ip=request.client.host if request.client else "unknown"
+                    )
+                    return templates.TemplateResponse(
+                        "login.html", 
+                        {"request": request, "error": "Invalid email or password"}, 
+                        status_code=401
+                    )
+                
+                # Create session using session management module
+                signed_session = create_session(user, db)
+                
+                logger.info(
+                    "login_success",
+                    user_id=user.id,
+                    email=mask_email(email),
+                    role=user.role,
+                    tenant_id=user.tenant_id,
+                    client_ip=request.client.host if request.client else "unknown"
+                )
+                
+                # Capture telemetry
+                telemetry.capture_auth_event(
+                    event_type="login",
+                    success=True,
+                    user_id=user.id,
+                    tenant_id=user.tenant_id
+                )
+                
+                resp = RedirectResponse(url="/", status_code=302)
+                from sentrascan.core.session import SESSION_TIMEOUT_HOURS
+                resp.set_cookie(
+                    SESSION_COOKIE, 
+                    signed_session, 
+                    httponly=True, 
+                    samesite="strict",
+                    secure=os.environ.get("SENTRASCAN_COOKIE_SECURE", "false").lower() == "true",
+                    max_age=SESSION_TIMEOUT_HOURS * 3600
+                )
+                return resp
+            except HTTPException as e:
+                return templates.TemplateResponse(
+                    "login.html", 
+                    {"request": request, "error": e.detail}, 
+                    status_code=e.status_code
+                )
+        
+        elif api_key:
+            # API key authentication
+            masked_key = mask_api_key(api_key)
+            rec = db.query(APIKey).filter(
+                APIKey.key_hash == APIKey.hash_key(api_key), 
+                APIKey.is_revoked == False
+            ).first()
+            if not rec:
+                logger.warning(
+                    "login_failed",
+                    reason="invalid_api_key",
+                    api_key_masked=masked_key,
+                    client_ip=request.client.host if request.client else "unknown"
+                )
+                return templates.TemplateResponse(
+                    "login.html", 
+                    {"request": request, "error": "Invalid API key"}, 
+                    status_code=401
+                )
+            
+            logger.info(
+                "login_success",
+                api_key_id=rec.id,
+                role=rec.role,
                 api_key_masked=masked_key,
                 client_ip=request.client.host if request.client else "unknown"
             )
-            return templates.TemplateResponse("login.html", {"request": request, "error": "Invalid API key"}, status_code=401)
-        
-        logger.info(
-            "login_success",
-            api_key_id=rec.id,
-            role=rec.role,
-            api_key_masked=masked_key,
-            client_ip=request.client.host if request.client else "unknown"
-        )
-        
-        # Capture telemetry
-        telemetry.capture_auth_event(
-            event_type="login",
-            success=True,
-            api_key_id=rec.id,
-            role=rec.role
-        )
-        
-        resp = RedirectResponse(url="/", status_code=302)
-        resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
-        return resp
+            
+            # Capture telemetry
+            telemetry.capture_auth_event(
+                event_type="login",
+                success=True,
+                api_key_id=rec.id,
+                role=rec.role
+            )
+            
+            resp = RedirectResponse(url="/", status_code=302)
+            resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
+            return resp
+        else:
+            # No credentials provided
+            return templates.TemplateResponse(
+                "login.html", 
+                {"request": request, "error": "Please provide either email/password or API key"}, 
+                status_code=400
+            )
     finally:
         db.close()
 
@@ -1220,24 +1307,28 @@ def ui_users(request: Request):
         db.close()
 
 @app.get("/docs")
-def ui_docs(request: Request):
+def ui_docs(request: Request, page: str = "getting-started"):
     """Documentation viewer page"""
-    user = get_session_user(request)
-    tenant = None
-    if user and hasattr(user, 'tenant_id'):
-        db = get_db_session()
-        try:
-            from sentrascan.core.models import Tenant
-            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
-        except Exception:
-            pass
-        finally:
-            db.close()
-    
-    return templates.TemplateResponse(
-        "docs.html",
-        {"request": request, "user": user, "tenant": tenant}
-    )
+    db = get_db_session()
+    try:
+        user = get_session_user(request, db)
+        tenant = None
+        if user:
+            # Handle both User and APIKey objects
+            tenant_id = None
+            if hasattr(user, 'tenant_id') and user.tenant_id:
+                tenant_id = user.tenant_id
+            
+            if tenant_id:
+                from sentrascan.core.models import Tenant
+                tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        
+        return templates.TemplateResponse(
+            "docs.html",
+            {"request": request, "user": user, "tenant": tenant, "page": page}
+        )
+    finally:
+        db.close()
 
 @app.get("/api/v1/docs/raw/{file_path:path}")
 def get_docs_file(file_path: str):
@@ -1270,26 +1361,6 @@ def get_docs_file(file_path: str):
     except Exception as e:
         logger.error("error_reading_docs_file", file_path=file_path, error=str(e))
         raise HTTPException(500, "Error reading file")
-
-@app.get("/docs")
-def ui_docs(request: Request):
-    """Documentation viewer page"""
-    user = get_session_user(request)
-    tenant = None
-    if user and hasattr(user, 'tenant_id'):
-        db = get_db_session()
-        try:
-            from sentrascan.core.models import Tenant
-            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
-        except Exception:
-            pass
-        finally:
-            db.close()
-    
-    return templates.TemplateResponse(
-        "docs.html",
-        {"request": request, "user": user, "tenant": tenant}
-    )
 
 @app.get("/api/v1/docs/raw/{file_path:path}")
 def get_docs_file(file_path: str):

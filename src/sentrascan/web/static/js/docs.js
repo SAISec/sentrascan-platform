@@ -127,12 +127,21 @@
     updateBreadcrumb(page);
 
     try {
-      const response = await fetch(`${DOCS_BASE_PATH}/raw/${DOCS_PAGES[page]}`);
+      const url = `${DOCS_BASE_PATH}/raw/${DOCS_PAGES[page]}`;
+      console.log('Loading documentation from:', url);
+      const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Failed to load: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('Failed to load documentation:', response.status, errorText);
+        throw new Error(`Failed to load: ${response.status} ${response.statusText}`);
       }
       
       const markdown = await response.text();
+      console.log('Markdown loaded, length:', markdown.length);
+      if (!markdown || markdown.trim().length === 0) {
+        throw new Error('Documentation file is empty');
+      }
+      
       renderMarkdown(markdown);
       generateTOC();
       scrollToAnchor();
@@ -144,6 +153,13 @@
 
   // Render markdown
   function renderMarkdown(markdown) {
+    // Check if marked is available
+    if (typeof marked === 'undefined') {
+      console.error('marked library not loaded');
+      showError('Markdown renderer not available. Please refresh the page.');
+      return;
+    }
+
     // Configure marked
     marked.setOptions({
       breaks: true,
@@ -153,19 +169,25 @@
     });
 
     // Render
-    const html = marked.parse(markdown);
-    content.innerHTML = html;
-    
-    // Highlight code blocks
-    if (window.Prism) {
-      Prism.highlightAllUnder(content);
+    try {
+      const html = marked.parse(markdown);
+      content.innerHTML = html;
+      showContent(); // Show content and hide loading
+      
+      // Highlight code blocks
+      if (window.Prism) {
+        Prism.highlightAllUnder(content);
+      }
+
+      // Add anchor links to headings
+      addAnchorLinks();
+
+      // Fix relative links
+      fixLinks();
+    } catch (err) {
+      console.error('Error rendering markdown:', err);
+      showError('Error rendering documentation: ' + err.message);
     }
-
-    // Add anchor links to headings
-    addAnchorLinks();
-
-    // Fix relative links
-    fixLinks();
   }
 
   // Add anchor links to headings
@@ -495,11 +517,37 @@
     loadPage(page);
   });
 
-  // Initialize when DOM is ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
-  } else {
-    init();
+  // Wait for required libraries to load (Safari compatibility)
+  function waitForLibraries(callback, maxAttempts = 50) {
+    let attempts = 0;
+    const checkLibraries = () => {
+      attempts++;
+      // Check if marked is available (required for docs)
+      if (typeof marked !== 'undefined') {
+        callback();
+      } else if (attempts < maxAttempts) {
+        // Wait 100ms and try again
+        setTimeout(checkLibraries, 100);
+      } else {
+        console.error('Timeout waiting for marked library to load');
+        // Try to initialize anyway - might work if library loads later
+        callback();
+      }
+    };
+    checkLibraries();
   }
+
+  // Initialize when DOM is ready and libraries are loaded
+  function initializeWhenReady() {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        waitForLibraries(init);
+      });
+    } else {
+      waitForLibraries(init);
+    }
+  }
+
+  initializeWhenReady();
 })();
 

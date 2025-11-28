@@ -21,46 +21,137 @@
     </div>
     {% endif %}
 
-    <form method="post" action="/login" class="login-form" novalidate aria-label="Login form">
+    <form method="post" action="/login" class="login-form" novalidate aria-label="Login form" id="loginForm">
       <fieldset style="border: none; margin: 0; padding: 0;">
         <legend class="sr-only">Login credentials</legend>
         
-        <div class="form-group">
-          <label for="api_key" class="form-label required">
-            API Key
-            <span class="sr-only">(required)</span>
-          </label>
-          <div class="password-input-wrapper" style="position: relative;">
-            <input 
-              type="password" 
-              id="api_key" 
-              name="api_key" 
-              class="form-input {% if error %}error{% endif %}" 
-              required 
-              autocomplete="current-password"
-              aria-describedby="api_key_help {% if error %}api_key_error{% endif %}"
-              aria-invalid="{% if error %}true{% else %}false{% endif %}"
-              aria-required="true"
-              placeholder="Enter your API key"
-              minlength="1"
-              autofocus
-            />
+        <!-- Authentication Method Toggle -->
+        <div class="form-group" style="margin-bottom: var(--spacing-md);">
+          <div class="auth-method-toggle" style="display: flex; gap: var(--spacing-sm); border: 1px solid var(--color-border-light, #e0e0e0); border-radius: var(--radius-md, 4px); padding: var(--spacing-xs); background-color: var(--color-bg-secondary, #f5f5f5);">
             <button 
               type="button" 
-              class="password-toggle" 
-              aria-label="Show password"
-              aria-pressed="false"
-              tabindex="0"
-              style="position: absolute; right: var(--spacing-sm); top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: var(--spacing-xs); color: var(--color-text-secondary); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;"
+              class="auth-toggle-btn active" 
+              data-method="user"
+              style="flex: 1; padding: var(--spacing-sm); border: none; background: var(--color-primary, #0066cc); color: white; border-radius: var(--radius-sm, 2px); cursor: pointer; font-weight: 500;"
+              aria-pressed="true"
             >
-              <span class="password-toggle-icon" aria-hidden="true">👁</span>
+              Email & Password
+            </button>
+            <button 
+              type="button" 
+              class="auth-toggle-btn" 
+              data-method="api_key"
+              style="flex: 1; padding: var(--spacing-sm); border: none; background: transparent; color: var(--color-text-secondary, #666); border-radius: var(--radius-sm, 2px); cursor: pointer; font-weight: 500;"
+              aria-pressed="false"
+            >
+              API Key
             </button>
           </div>
-          <p id="api_key_help" class="form-help-text">
-            Enter your API key to authenticate
-          </p>
-          <div id="api_key_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% else %}display: block; color: var(--color-error, #F44336); font-size: var(--font-size-sm, 14px); margin-top: var(--spacing-xs, 4px);{% endif %}">
-            {% if error %}{{ error }}{% endif %}
+        </div>
+
+        <!-- Email/Password Fields (Default) -->
+        <div id="userAuthFields" class="auth-fields">
+          <div class="form-group">
+            <label for="email" class="form-label required">
+              Email Address
+              <span class="sr-only">(required)</span>
+            </label>
+            <input 
+              type="email" 
+              id="email" 
+              name="email" 
+              class="form-input {% if error %}error{% endif %}" 
+              required 
+              autocomplete="email"
+              aria-describedby="email_help {% if error %}email_error{% endif %}"
+              aria-invalid="{% if error %}true{% else %}false{% endif %}"
+              aria-required="true"
+              placeholder="Enter your email address"
+              autofocus
+            />
+            <p id="email_help" class="form-help-text">
+              Enter your registered email address
+            </p>
+            <div id="email_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% else %}display: block; color: var(--color-error, #F44336); font-size: var(--font-size-sm, 14px); margin-top: var(--spacing-xs, 4px);{% endif %}">
+              {% if error %}{{ error }}{% endif %}
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="password" class="form-label required">
+              Password
+              <span class="sr-only">(required)</span>
+            </label>
+            <div class="password-input-wrapper" style="position: relative;">
+              <input 
+                type="password" 
+                id="password" 
+                name="password" 
+                class="form-input {% if error %}error{% endif %}" 
+                required 
+                autocomplete="current-password"
+                aria-describedby="password_help {% if error %}password_error{% endif %}"
+                aria-invalid="{% if error %}true{% else %}false{% endif %}"
+                aria-required="true"
+                placeholder="Enter your password"
+                minlength="12"
+              />
+              <button 
+                type="button" 
+                class="password-toggle" 
+                aria-label="Show password"
+                aria-pressed="false"
+                tabindex="0"
+                style="position: absolute; right: var(--spacing-sm); top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: var(--spacing-xs); color: var(--color-text-secondary); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;"
+              >
+                <span class="password-toggle-icon" aria-hidden="true">👁</span>
+              </button>
+            </div>
+            <p id="password_help" class="form-help-text">
+              Enter your password (minimum 12 characters)
+            </p>
+            <div id="password_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% else %}display: block; color: var(--color-error, #F44336); font-size: var(--font-size-sm, 14px); margin-top: var(--spacing-xs, 4px);{% endif %}">
+              {% if error %}{{ error }}{% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- API Key Fields (Hidden by default) -->
+        <div id="apiKeyAuthFields" class="auth-fields" style="display: none;">
+          <div class="form-group">
+            <label for="api_key" class="form-label required">
+              API Key
+              <span class="sr-only">(required)</span>
+            </label>
+            <div class="password-input-wrapper" style="position: relative;">
+              <input 
+                type="password" 
+                id="api_key" 
+                name="api_key" 
+                class="form-input {% if error %}error{% endif %}" 
+                autocomplete="current-password"
+                aria-describedby="api_key_help {% if error %}api_key_error{% endif %}"
+                aria-invalid="{% if error %}true{% else %}false{% endif %}"
+                placeholder="Enter your API key"
+                minlength="1"
+              />
+              <button 
+                type="button" 
+                class="password-toggle" 
+                aria-label="Show password"
+                aria-pressed="false"
+                tabindex="0"
+                style="position: absolute; right: var(--spacing-sm); top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; padding: var(--spacing-xs); color: var(--color-text-secondary); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;"
+              >
+                <span class="password-toggle-icon" aria-hidden="true">👁</span>
+              </button>
+            </div>
+            <p id="api_key_help" class="form-help-text">
+              Enter your API key to authenticate
+            </p>
+            <div id="api_key_error" class="form-error-message" role="alert" aria-live="assertive" style="{% if not error %}display: none;{% else %}display: block; color: var(--color-error, #F44336); font-size: var(--font-size-sm, 14px); margin-top: var(--spacing-xs, 4px);{% endif %}">
+              {% if error %}{{ error }}{% endif %}
+            </div>
           </div>
         </div>
 
@@ -78,7 +169,8 @@
 
     <div class="login-footer" style="text-align: center; padding-top: var(--spacing-lg); border-top: 1px solid var(--color-border-light);">
       <p style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin: 0;">
-        Need help? Contact your administrator for an API key.
+        <span id="helpTextUser">Need help? Contact your administrator to create an account.</span>
+        <span id="helpTextApiKey" style="display: none;">Need help? Contact your administrator for an API key.</span>
       </p>
     </div>
   </div>
@@ -103,100 +195,261 @@
 // Login form validation and functionality
 (function() {
   const form = document.querySelector('.login-form');
+  const emailInput = document.getElementById('email');
+  const passwordInput = document.getElementById('password');
   const apiKeyInput = document.getElementById('api_key');
+  const emailError = document.getElementById('email_error');
+  const passwordError = document.getElementById('password_error');
   const apiKeyError = document.getElementById('api_key_error');
   const submitButton = form?.querySelector('button[type="submit"]');
   const buttonText = submitButton?.querySelector('.button-text');
   const buttonSpinner = submitButton?.querySelector('.button-spinner');
-  const toggleButton = document.querySelector('.password-toggle');
-  const toggleIcon = document.querySelector('.password-toggle-icon');
+  const toggleButtons = document.querySelectorAll('.password-toggle');
+  const userAuthFields = document.getElementById('userAuthFields');
+  const apiKeyAuthFields = document.getElementById('apiKeyAuthFields');
+  const authToggleButtons = document.querySelectorAll('.auth-toggle-btn');
+  let currentAuthMethod = 'user'; // 'user' or 'api_key'
 
-  // Password toggle functionality
-  if (apiKeyInput && toggleButton) {
-    toggleButton.addEventListener('click', function(e) {
+  // Authentication method toggle
+  authToggleButtons.forEach(btn => {
+    btn.addEventListener('click', function(e) {
       e.preventDefault();
-      const isPassword = apiKeyInput.type === 'password';
+      const method = this.getAttribute('data-method');
       
-      apiKeyInput.type = isPassword ? 'text' : 'password';
-      toggleButton.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
-      toggleButton.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
-      toggleIcon.textContent = isPassword ? '🙈' : '👁';
-    });
-
-    // Keyboard support for toggle
-    toggleButton.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        toggleButton.click();
+      // Update active state
+      authToggleButtons.forEach(b => {
+        b.classList.remove('active');
+        b.style.background = 'transparent';
+        b.style.color = 'var(--color-text-secondary, #666)';
+        b.setAttribute('aria-pressed', 'false');
+      });
+      this.classList.add('active');
+      this.style.background = 'var(--color-primary, #0066cc)';
+      this.style.color = 'white';
+      this.setAttribute('aria-pressed', 'true');
+      
+      // Show/hide appropriate fields
+      if (method === 'user') {
+        userAuthFields.style.display = 'block';
+        apiKeyAuthFields.style.display = 'none';
+        emailInput.required = true;
+        passwordInput.required = true;
+        apiKeyInput.required = false;
+        currentAuthMethod = 'user';
+        document.getElementById('helpTextUser').style.display = 'inline';
+        document.getElementById('helpTextApiKey').style.display = 'none';
+        emailInput.focus();
+      } else {
+        userAuthFields.style.display = 'none';
+        apiKeyAuthFields.style.display = 'block';
+        emailInput.required = false;
+        passwordInput.required = false;
+        apiKeyInput.required = true;
+        currentAuthMethod = 'api_key';
+        document.getElementById('helpTextUser').style.display = 'none';
+        document.getElementById('helpTextApiKey').style.display = 'inline';
+        apiKeyInput.focus();
       }
     });
-  }
+  });
+
+  // Password toggle functionality for all password fields
+  toggleButtons.forEach(toggleButton => {
+    const passwordField = toggleButton.previousElementSibling;
+    const toggleIcon = toggleButton.querySelector('.password-toggle-icon');
+    
+    if (passwordField && toggleButton) {
+      toggleButton.addEventListener('click', function(e) {
+        e.preventDefault();
+        const isPassword = passwordField.type === 'password';
+        
+        passwordField.type = isPassword ? 'text' : 'password';
+        toggleButton.setAttribute('aria-label', isPassword ? 'Hide password' : 'Show password');
+        toggleButton.setAttribute('aria-pressed', isPassword ? 'true' : 'false');
+        if (toggleIcon) {
+          toggleIcon.textContent = isPassword ? '🙈' : '👁';
+        }
+      });
+
+      // Keyboard support for toggle
+      toggleButton.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          toggleButton.click();
+        }
+      });
+    }
+  });
 
   // Validation functions
-  function showError(message) {
-    if (!apiKeyError || !apiKeyInput) return;
+  function showError(message, field) {
+    let errorElement, inputElement, helpId;
     
-    apiKeyError.textContent = message;
-    apiKeyError.style.display = 'block';
-    apiKeyInput.classList.add('error');
-    apiKeyInput.setAttribute('aria-invalid', 'true');
+    if (field === 'email') {
+      errorElement = emailError;
+      inputElement = emailInput;
+      helpId = 'email_help';
+    } else if (field === 'password') {
+      errorElement = passwordError;
+      inputElement = passwordInput;
+      helpId = 'password_help';
+    } else if (field === 'api_key') {
+      errorElement = apiKeyError;
+      inputElement = apiKeyInput;
+      helpId = 'api_key_help';
+    } else {
+      return;
+    }
+    
+    if (!errorElement || !inputElement) return;
+    
+    errorElement.textContent = message;
+    errorElement.style.display = 'block';
+    inputElement.classList.add('error');
+    inputElement.setAttribute('aria-invalid', 'true');
     // Ensure error ID is in aria-describedby
-    const currentDescribedBy = apiKeyInput.getAttribute('aria-describedby') || '';
-    if (!currentDescribedBy.includes('api_key_error')) {
-      apiKeyInput.setAttribute('aria-describedby', (currentDescribedBy + ' api_key_error').trim());
+    const currentDescribedBy = inputElement.getAttribute('aria-describedby') || '';
+    const errorId = field + '_error';
+    if (!currentDescribedBy.includes(errorId)) {
+      inputElement.setAttribute('aria-describedby', (currentDescribedBy + ' ' + errorId).trim());
     }
     
     // Focus on input to announce error to screen readers
-    apiKeyInput.focus();
+    inputElement.focus();
     
     // Scroll to error if needed (but don't interrupt focus)
     setTimeout(() => {
-      apiKeyError.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      errorElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 100);
   }
 
-  function clearError() {
-    if (!apiKeyError || !apiKeyInput) return;
+  function clearError(field) {
+    let errorElement, inputElement, helpId;
     
-    apiKeyError.textContent = '';
-    apiKeyError.style.display = 'none';
-    apiKeyInput.classList.remove('error');
-    apiKeyInput.setAttribute('aria-invalid', 'false');
-    apiKeyInput.setAttribute('aria-describedby', 'api_key_help');
+    if (field === 'email') {
+      errorElement = emailError;
+      inputElement = emailInput;
+      helpId = 'email_help';
+    } else if (field === 'password') {
+      errorElement = passwordError;
+      inputElement = passwordInput;
+      helpId = 'password_help';
+    } else if (field === 'api_key') {
+      errorElement = apiKeyError;
+      inputElement = apiKeyInput;
+      helpId = 'api_key_help';
+    } else {
+      return;
+    }
+    
+    if (!errorElement || !inputElement) return;
+    
+    errorElement.textContent = '';
+    errorElement.style.display = 'none';
+    inputElement.classList.remove('error');
+    inputElement.setAttribute('aria-invalid', 'false');
+    inputElement.setAttribute('aria-describedby', helpId);
+  }
+
+  function validateEmail() {
+    const value = emailInput.value.trim();
+    
+    if (!value) {
+      showError('Email address is required', 'email');
+      return false;
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(value)) {
+      showError('Please enter a valid email address', 'email');
+      return false;
+    }
+    
+    clearError('email');
+    return true;
+  }
+
+  function validatePassword() {
+    const value = passwordInput.value;
+    
+    if (!value) {
+      showError('Password is required', 'password');
+      return false;
+    }
+    
+    if (value.length < 12) {
+      showError('Password must be at least 12 characters long', 'password');
+      return false;
+    }
+    
+    clearError('password');
+    return true;
   }
 
   function validateApiKey() {
     const value = apiKeyInput.value.trim();
     
     if (!value) {
-      showError('API key is required');
+      showError('API key is required', 'api_key');
       return false;
     }
     
     if (value.length < 1) {
-      showError('API key cannot be empty');
+      showError('API key cannot be empty', 'api_key');
       return false;
     }
     
-    clearError();
+    clearError('api_key');
     return true;
   }
 
   // Real-time validation on input
+  if (emailInput) {
+    emailInput.addEventListener('input', function() {
+      {% if not error %}
+      if (this.value.trim().length > 0) {
+        clearError('email');
+      }
+      {% endif %}
+    });
+
+    emailInput.addEventListener('blur', function() {
+      {% if not error %}
+      if (this.value.trim().length === 0) {
+        validateEmail();
+      }
+      {% endif %}
+    });
+  }
+
+  if (passwordInput) {
+    passwordInput.addEventListener('input', function() {
+      {% if not error %}
+      if (this.value.length > 0) {
+        clearError('password');
+      }
+      {% endif %}
+    });
+
+    passwordInput.addEventListener('blur', function() {
+      {% if not error %}
+      if (this.value.length === 0) {
+        validatePassword();
+      }
+      {% endif %}
+    });
+  }
+
   if (apiKeyInput) {
     apiKeyInput.addEventListener('input', function() {
-      // Only clear client-side errors, not server-side errors
-      const value = this.value.trim();
-      if (value.length > 0 && !this.classList.contains('error')) {
-        // Only clear if there's no server error
-        {% if not error %}
-        clearError();
-        {% endif %}
+      {% if not error %}
+      if (this.value.trim().length > 0) {
+        clearError('api_key');
       }
+      {% endif %}
     });
 
     apiKeyInput.addEventListener('blur', function() {
-      // Validate on blur only if no server error is present
       {% if not error %}
       if (this.value.trim().length === 0) {
         validateApiKey();
@@ -210,15 +463,34 @@
     form.addEventListener('submit', function(e) {
       // Clear any previous client-side errors
       {% if not error %}
-      clearError();
+      if (currentAuthMethod === 'user') {
+        clearError('email');
+        clearError('password');
+      } else {
+        clearError('api_key');
+      }
       {% endif %}
       
-      // Validate before submission
-      if (!validateApiKey()) {
-        e.preventDefault();
-        // Focus management: focus on the invalid input
-        apiKeyInput.focus();
-        return false;
+      // Validate before submission based on current auth method
+      let isValid = false;
+      if (currentAuthMethod === 'user') {
+        isValid = validateEmail() && validatePassword();
+        if (!isValid) {
+          e.preventDefault();
+          if (!emailInput.validity.valid) {
+            emailInput.focus();
+          } else if (!passwordInput.validity.valid) {
+            passwordInput.focus();
+          }
+          return false;
+        }
+      } else {
+        isValid = validateApiKey();
+        if (!isValid) {
+          e.preventDefault();
+          apiKeyInput.focus();
+          return false;
+        }
       }
 
       // Show loading state

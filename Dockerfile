@@ -58,6 +58,8 @@ RUN playwright install chromium \
 COPY src/ /app/src/
 # Copy tests (for running tests in container)
 COPY tests/ /app/tests/
+# Copy documentation (for docs viewer)
+COPY docs/ /app/docs/
 
 # Install the package in editable mode (fast since dependencies are already installed)
 RUN pip install --no-cache-dir -e .
