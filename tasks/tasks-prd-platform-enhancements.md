@@ -84,8 +84,11 @@ Based on: `prd-platform-enhancements.md`
 - `tests/test_session.py` - Unit tests for session management (17 tests)
 - `tests/test_integration.py` - Comprehensive integration tests covering 17 test scenarios (API flows, authentication, authorization, tenant isolation, error handling, rate limiting, database schema, sharding, encryption, data isolation, session persistence, API key workflows, user management, tenant settings, analytics, scan execution, findings storage)
 - `tests/test_performance.py` - New file for performance tests
-- `tests/test_security.py` - Comprehensive security tests covering password policies, MFA, session management, RBAC, API key validation, SQL injection prevention, XSS prevention, CSRF protection, input validation, output encoding, encryption at rest, data masking, secure deletion, tenant isolation, rate limiting, secrets management, and penetration test findings (S-01 through S-06, D-01, D-02) including default credentials, API key hashing security, auth error handling, Argon2 password hashing, function-level authorization (BFLA), tenant isolation/IDOR prevention, require_api_key usage, and circular import prevention (24 test classes, 62 test methods)
+- `tests/test_security.py` - Comprehensive security tests covering password policies, MFA, session management, RBAC, API key validation, SQL injection prevention, XSS prevention, CSRF protection, input validation, output encoding, encryption at rest, data masking, secure deletion, tenant isolation, rate limiting, secrets management, and penetration test findings (S-01 through S-06, D-01, D-02) including default credentials, API key hashing security, auth error handling, Argon2 password hashing, function-level authorization (BFLA), tenant isolation/IDOR prevention, require_api_key usage, and circular import prevention (24 test classes, 62 test methods). Updated to use PostgreSQL database for production parity (auto-creates test database, handles schema creation, proper test isolation)
 - `tests/SECURITY_TEST_REPORT.md` - Comprehensive security test report documenting all test classes and methods, test results by category, penetration test findings coverage, test execution instructions, recommendations, and test maintenance procedures
+- `tests/pytest.ini` - Pytest configuration file with PostgreSQL test database defaults and test markers
+- `tests/README_POSTGRESQL.md` - Setup and usage guide for running security tests with PostgreSQL database
+- `tests/SECURITY_TEST_RESULTS_POSTGRESQL.md` - Detailed test results report for PostgreSQL database testing (57 passed, 5 skipped)
 - `tests/test_acceptance.py` - New file for acceptance tests
 - `tests/conftest.py` - Pytest configuration with fixtures for tenants, users, API keys, scans, findings, baselines, SBOMs
 - `tests/UNIT_TEST_SUMMARY.md` - Documentation for unit test setup and coverage configuration
@@ -375,6 +378,10 @@ Based on: `prd-platform-enhancements.md`
     - [x] Created comprehensive security audit document `docs/SECURITY-AUDIT-AUTH-AUTHZ.md` covering authentication flows (user registration, login, API key auth, session management, MFA), authorization flows (RBAC, tenant isolation, function-level auth), security controls (password policies, account lockout, rate limiting, CSRF, input validation), identified issues (S-01 through S-06, D-01, D-02), recommendations, testing recommendations, OWASP Top 10 coverage, and endpoint permission matrix
   - [x] 9.3 Document security test results and create security test reports
     - [x] Created comprehensive security test report `tests/SECURITY_TEST_REPORT.md` documenting all 24 test classes and 62 test methods, test results by category (17 security areas), penetration test findings coverage (S-01 through S-06, D-01, D-02), test execution instructions, test results summary, recommendations (high/medium/low priority), test maintenance procedures, and conclusion with next steps
+    - [x] Updated security tests to use PostgreSQL database (matching production environment) with automatic test database creation, schema support, and proper test isolation - All 57 tests passing with PostgreSQL
+    - [x] Created `tests/pytest.ini` for pytest configuration with PostgreSQL defaults
+    - [x] Created `tests/README_POSTGRESQL.md` for PostgreSQL testing setup guide
+    - [x] Created `tests/SECURITY_TEST_RESULTS_POSTGRESQL.md` documenting PostgreSQL test results
 
 - [ ] 10.0 Acceptance Testing
   - [ ] 10.1 Create acceptance test plan based on user stories from PRD
