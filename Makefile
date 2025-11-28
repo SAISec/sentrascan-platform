@@ -50,9 +50,10 @@ help: ## Display this help message
 	@echo "  make venv             - Create virtual environment"
 	@echo "  make dev-install      - Install with dev dependencies"
 	@echo "  make server           - Run local development server"
-	@echo "  make db-init          - Initialize database"
-	@echo "  make db-reset         - Reset database (drop and recreate)"
-	@echo "  make auth-create      - Create API key (use NAME=... ROLE=...)"
+	@echo "  make db-init           - Initialize database"
+	@echo "  make db-reset          - Reset database (drop and recreate)"
+	@echo "  make auth-create       - Create API key (use NAME=... ROLE=...)"
+	@echo "  make create-super-admin - Create first super admin user (use EMAIL=... PASSWORD=... NAME=...)"
 	@echo ""
 	@echo "Local Testing:"
 	@echo "  make test             - Run all tests"
@@ -161,6 +162,27 @@ auth-create: ## Create API key (use NAME=... ROLE=admin|viewer)
 		$(DOCKER_COMPOSE) exec api sentrascan auth create --name "$(NAME)" --role "$(ROLE)"; \
 	else \
 		sentrascan auth create --name "$(NAME)" --role "$(ROLE)"; \
+	fi
+
+create-super-admin: ## Create first super admin user (use EMAIL=... PASSWORD=... NAME=... TENANT_NAME=...)
+	@if [ -z "$(EMAIL)" ] || [ -z "$(PASSWORD)" ] || [ -z "$(NAME)" ]; then \
+		echo "Error: EMAIL, PASSWORD, and NAME required"; \
+		echo "Usage: make create-super-admin EMAIL=admin@example.com PASSWORD=SecurePass123! NAME='Admin User'"; \
+		echo "Optional: TENANT_NAME='My Organization' (default: 'Default Tenant')"; \
+		exit 1; \
+	fi
+	@if command -v docker >/dev/null 2>&1 && $(DOCKER_COMPOSE) ps api >/dev/null 2>&1; then \
+		$(DOCKER_COMPOSE) exec api sentrascan user create-super-admin \
+			--email "$(EMAIL)" \
+			--password "$(PASSWORD)" \
+			--name "$(NAME)" \
+			--tenant-name "$(TENANT_NAME)"; \
+	else \
+		sentrascan user create-super-admin \
+			--email "$(EMAIL)" \
+			--password "$(PASSWORD)" \
+			--name "$(NAME)" \
+			--tenant-name "$(TENANT_NAME)"; \
 	fi
 
 # ============================================================================

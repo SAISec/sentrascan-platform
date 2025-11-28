@@ -116,11 +116,14 @@ def decrypt_after_flush(session: Session, flush_context):
         _decrypt_instance(instance, tenant_id)
 
 
-def decrypt_on_load(mapper, connection, target):
+def decrypt_on_load(target, context):
     """
     Decrypt data when an instance is loaded from the database.
     
     This is called for each instance after it's loaded.
+    Args:
+        target: The instance being loaded
+        context: Query context (unused)
     """
     tenant_id = get_tenant_id()
     if tenant_id:

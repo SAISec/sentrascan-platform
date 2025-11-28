@@ -107,3 +107,80 @@ def doctor():
     ok, details = ModelScanner.doctor()
     click.echo(details)
     sys.exit(0 if ok else 2)
+
+@main.group()
+def user():
+    """User management"""
+    pass
+
+@user.command("create-super-admin")
+@click.option("--email", required=True, prompt="Email address")
+@click.option("--password", required=True, prompt="Password", hide_input=True, confirmation_prompt=True)
+@click.option("--name", required=True, prompt="Full name")
+@click.option("--tenant-name", default="Default Tenant", help="Name for the default tenant (if creating first tenant)")
+def create_super_admin(email, password, name, tenant_name):
+    """
+    Create the first super admin user and default tenant.
+    Use this command on first deployment to bootstrap the system.
+    """
+    from sentrascan.core.models import Tenant, User
+    from sentrascan.core.auth import create_user
+    
+    db = SessionLocal()
+    try:
+        # Check if any tenants exist
+        existing_tenants = db.query(Tenant).count()
+        
+        if existing_tenants == 0:
+            # Create default tenant
+            click.echo(f"Creating default tenant: {tenant_name}")
+            tenant = Tenant(
+                name=tenant_name,
+                is_active=True,
+                settings={}
+            )
+            db.add(tenant)
+            db.commit()
+            db.refresh(tenant)
+            tenant_id = tenant.id
+            click.echo(f"✓ Tenant created with ID: {tenant_id}")
+        else:
+            # Use first tenant or ask which one
+            tenant = db.query(Tenant).filter(Tenant.is_active == True).first()
+            if not tenant:
+                click.echo("Error: No active tenants found. Please create a tenant first.")
+                sys.exit(1)
+            tenant_id = tenant.id
+            click.echo(f"Using existing tenant: {tenant.name} (ID: {tenant_id})")
+        
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == email.lower()).first()
+        if existing_user:
+            click.echo(f"Error: User with email {email} already exists.")
+            sys.exit(1)
+        
+        # Create super admin user
+        click.echo(f"Creating super admin user: {email}")
+        user = create_user(
+            db=db,
+            email=email,
+            password=password,
+            name=name,
+            tenant_id=tenant_id,
+            role="super_admin"
+        )
+        
+        click.echo("✓ Super admin user created successfully!")
+        click.echo(f"  Email: {user.email}")
+        click.echo(f"  Name: {user.name}")
+        click.echo(f"  Role: {user.role}")
+        click.echo(f"  Tenant: {tenant.name}")
+        click.echo(f"  User ID: {user.id}")
+        click.echo("\nYou can now log in at http://localhost:8200/login")
+        
+    except Exception as e:
+        db.rollback()
+        click.echo(f"Error creating super admin: {e}", err=True)
+        sys.exit(1)
+    finally:
+        db.close()

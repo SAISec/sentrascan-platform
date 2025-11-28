@@ -231,7 +231,7 @@ def _get_user_from_session(signed_cookie: str, db: Session):
     return None
 
 # Simple API key and role enforcement (MVP)
-from sentrascan.core.models import APIKey, Scan, Finding, Baseline
+from sentrascan.core.models import APIKey, Scan, Finding, Baseline, User, Tenant
 
 def get_db():
     db = SessionLocal()
