@@ -3,6 +3,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+from urllib.parse import urlparse
 import time
 from typing import List, Optional
 from sentrascan.core.models import Scan, Finding, SBOM
@@ -11,6 +12,28 @@ from sentrascan.core.policy import PolicyEngine
 class ModelScanner:
     def __init__(self, policy: PolicyEngine):
         self.policy = policy
+
+    @staticmethod
+    def _validate_paths(paths: List[str]) -> List[str]:
+        """
+        Validate scan paths to prevent SSRF by disallowing raw HTTP(S) URLs.
+        
+        The model scanner should operate on local files or pre-fetched content.
+        Remote URLs must be fetched via a separate, SSRF-safe component.
+        """
+        safe_paths: List[str] = []
+        for p in paths:
+            if not isinstance(p, str):
+                continue
+            parsed = urlparse(p)
+            # Disallow direct http/https URLs
+            if parsed.scheme in ("http", "https"):
+                raise ValueError(
+                    f"Remote URLs are not allowed in model scan paths: {p}. "
+                    "Download artifacts to a local path first."
+                )
+            safe_paths.append(p)
+        return safe_paths
 
     @staticmethod
     def doctor():
@@ -23,6 +46,8 @@ class ModelScanner:
 
     def scan(self, paths: List[str], sbom_path: Optional[str], strict: bool, timeout: int, db, tenant_id: Optional[str] = None):
         start = time.time()
+        # Validate paths to avoid SSRF and remote fetches via subprocess
+        paths = self._validate_paths(paths or [])
         tmp_report = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         tmp_report.close()
         args = ["modelaudit", "scan"] + list(paths)

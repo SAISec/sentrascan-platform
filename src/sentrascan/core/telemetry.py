@@ -49,7 +49,11 @@ class TelemetryCollector:
         
         # Determine telemetry directory
         if telemetry_dir is None:
-            if os.path.exists("/app"):
+            # Allow overriding via environment variable for read-only filesystems
+            env_telemetry_dir = os.environ.get("TELEMETRY_DIR")
+            if env_telemetry_dir:
+                telemetry_dir = env_telemetry_dir
+            elif os.path.exists("/app"):
                 telemetry_dir = "/app/telemetry"
             else:
                 telemetry_dir = "./telemetry"

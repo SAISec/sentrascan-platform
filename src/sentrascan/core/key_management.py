@@ -35,8 +35,10 @@ KEYS_DIR = Path(os.environ.get("ENCRYPTION_KEYS_DIR", _default_keys_dir))
 try:
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
 except (OSError, PermissionError):
-    # Fallback to current directory if can't create default
-    KEYS_DIR = Path(os.path.join(os.getcwd(), ".keys"))
+    # In read-only environments (e.g., protected containers), fall back to a
+    # writable volume such as /cache/keys. This path is configured as a
+    # Docker volume in production deployments.
+    KEYS_DIR = Path(os.environ.get("ENCRYPTION_KEYS_DIR", "/cache/keys"))
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
 KEYS_FILE = KEYS_DIR / "tenant_keys.json"
 MASTER_KEY_ENV = "ENCRYPTION_MASTER_KEY"

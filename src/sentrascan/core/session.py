@@ -20,7 +20,25 @@ logger = get_logger(__name__)
 
 # Session configuration
 SESSION_COOKIE_NAME = os.environ.get("SENTRASCAN_SESSION_COOKIE", "ss_session")
-SESSION_SECRET = os.environ.get("SENTRASCAN_SECRET", "dev-secret-change-me")
+
+# Session secret:
+# - MUST NOT use a hardcoded default (to avoid offline forgery with known key)
+# - If SENTRASCAN_SECRET is not provided, generate a strong random secret at
+#   process start and emit a warning so operators know to configure it.
+_configured_secret = os.environ.get("SENTRASCAN_SECRET")
+if not _configured_secret or _configured_secret.strip() in {"dev-secret-change-me", ""}:
+    import secrets as _secrets
+    SESSION_SECRET = _secrets.token_hex(32)
+    logger.warning(
+        "session_secret_auto_generated",
+        reason="missing_or_default_secret",
+        message="SENTRASCAN_SECRET was not set or used a dev value. "
+                "A random in-memory secret was generated for this process. "
+                "Configure a strong SENTRASCAN_SECRET in production.",
+    )
+else:
+    SESSION_SECRET = _configured_secret
+
 SESSION_TIMEOUT_HOURS = int(os.environ.get("SESSION_TIMEOUT_HOURS", "48"))
 SESSION_REFRESH_THRESHOLD = 0.8  # Refresh if less than 80% of time remaining
 

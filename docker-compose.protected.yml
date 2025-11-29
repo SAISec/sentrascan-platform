@@ -13,14 +13,21 @@ services:
       context: .
       dockerfile: Dockerfile.protected
     image: sentrascan/platform:protected
-    command: sentrascan server --host 0.0.0.0 --port 8200
     ports:
       - "8200:8200"
     environment:
       - DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+      - TEST_DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan_test
       - MODELAUDIT_CACHE_DIR=/cache
       # Container access key (must match build-time key)
       - SENTRASCAN_ACCESS_KEY=Sentrascan@25!
+      # Session secret for secure cookies
+      - SENTRASCAN_SECRET=a_very_strong_and_random_secret_for_production_use_only_1234567890
+      # Writable directories for read-only filesystem
+      - ENCRYPTION_KEYS_DIR=/cache/keys
+      - LOG_DIR=/data/logs
+      - TELEMETRY_DIR=/data/telemetry
+      - BACKUP_DIR=/data/backups
       # Optional: License key validation
       # - SENTRASCAN_LICENSE_KEY=${LICENSE_KEY}
     depends_on:
@@ -30,6 +37,7 @@ services:
       - ./reports:/reports
       - ./sboms:/sboms
       - ./cache:/cache
+      - ./backups:/backups
     # Security hardening
     security_opt:
       - no-new-privileges:true
@@ -50,9 +58,9 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    # Health check
+    # Health check (use distroless Python binary explicitly)
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/api/v1/health')"]
+      test: ["CMD", "/usr/bin/python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8200/api/v1/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

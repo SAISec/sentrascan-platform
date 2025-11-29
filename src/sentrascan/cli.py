@@ -184,3 +184,7 @@ def create_super_admin(email, password, name, tenant_name):
         sys.exit(1)
     finally:
         db.close()
+
+
+if __name__ == "__main__":
+    main()

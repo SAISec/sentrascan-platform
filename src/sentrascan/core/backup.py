@@ -22,8 +22,9 @@ BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", _default_backup_dir))
 try:
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 except (OSError, PermissionError):
-    # Fallback to current directory if can't create default
-    BACKUP_DIR = Path(os.path.join(os.getcwd(), ".backups"))
+    # In read-only environments (e.g., protected containers), fall back to a
+    # writable volume such as /cache/backups.
+    BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", "/cache/backups"))
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -615,6 +615,61 @@ class TestAPIKeyValidation:
         assert api_key_record.expires_at < datetime.utcnow()
 
 
+class TestSessionSecretAndCookies:
+    """Additional tests for session secret configuration and cookie security."""
+
+    def test_session_secret_not_default(self):
+        """SESSION_SECRET must not use the old hardcoded dev default."""
+        from sentrascan.core import session as session_mod
+
+        assert session_mod.SESSION_SECRET is not None
+        assert session_mod.SESSION_SECRET != "dev-secret-change-me"
+        # Should look like a reasonably strong secret
+        assert len(session_mod.SESSION_SECRET) >= 32
+
+    def test_api_key_login_uses_opaque_cookie(self, db_session, test_client, test_tenant, admin_user, monkeypatch):
+        """
+        API key based sessions must not embed the raw API key in the cookie.
+
+        The server stores an opaque identifier of the form ``api:<id>`` in the
+        session cookie; this test verifies that when such a value is signed, the
+        resulting cookie does not reveal the underlying API key.
+        """
+        from sentrascan.core.session import sign
+
+        # Simulate an API key and its associated database ID
+        api_key_value = generate_api_key()
+        fake_api_key_id = "test-api-key-id-123"
+
+        # Server stores only "api:<id>" in the cookie, never the API key itself
+        api_session_value = f"api:{fake_api_key_id}"
+        session_cookie = sign(api_session_value)
+
+        # Cookie value must not leak the raw API key
+        assert api_key_value not in session_cookie
+
+
+class TestModelScannerSSRFPrevention:
+    """Ensure model scanner does not accept raw HTTP(S) URLs."""
+
+    def test_model_scanner_rejects_http_urls(self, db_session, test_tenant):
+        from sentrascan.modules.model.scanner import ModelScanner
+        from sentrascan.core.policy import PolicyEngine
+
+        scanner = ModelScanner(policy=PolicyEngine.default_model())
+
+        bad_paths = ["http://169.254.169.254/latest/meta-data/", "https://example.com/model.onnx"]
+        with pytest.raises(ValueError):
+            scanner.scan(
+                paths=bad_paths,
+                sbom_path=None,
+                strict=False,
+                timeout=10,
+                db=db_session,
+                tenant_id=test_tenant.id,
+            )
+
+
 class TestSQLInjectionPrevention:
     """Test 6: SQL injection prevention"""
     

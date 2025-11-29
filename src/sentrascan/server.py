@@ -207,26 +207,38 @@ def _get_user_from_session(signed_cookie: str, db: Session):
     if user:
         return user
     
-    # Legacy: Check if it's a user session (format: "user:{user_id}")
+    # Legacy / backward-compatible session cookie handling
     signed_value = unsign(signed_cookie)
-    if signed_value and signed_value.startswith("user:"):
-        user_id = signed_value.split(":", 1)[1]
-        user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
-        if user:
-            # Refresh session on activity
-            refresh_session(signed_cookie)
-            return user
-    
-    # Legacy: API key session
     if signed_value:
-        rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(signed_value), APIKey.is_revoked == False).first()
-        if rec:
-            # Check expiration
-            if rec.expires_at and datetime.utcnow() > rec.expires_at:
-                logger.warning("api_key_expired", api_key_id=rec.id)
-                raise HTTPException(401, "API key has expired")
-            # Return APIKey object - it has role attribute for RBAC
-            return rec
+        # Legacy: user session (format: "user:{user_id}")
+        if signed_value.startswith("user:"):
+            user_id = signed_value.split(":", 1)[1]
+            user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+            if user:
+                # Refresh session on activity
+                refresh_session(signed_cookie)
+                return user
+        # Updated: API key session now stores opaque ID, not raw API key value
+        elif signed_value.startswith("api:"):
+            api_key_id = signed_value.split(":", 1)[1]
+            rec = db.query(APIKey).filter(APIKey.id == api_key_id, APIKey.is_revoked == False).first()
+            if rec:
+                if rec.expires_at and datetime.utcnow() > rec.expires_at:
+                    logger.warning("api_key_expired", api_key_id=rec.id)
+                    raise HTTPException(401, "API key has expired")
+                return rec
+        else:
+            # Very old cookies may still contain raw API key value; keep a
+            # compatibility path but discourage by not issuing new cookies
+            rec = db.query(APIKey).filter(
+                APIKey.key_hash == APIKey.hash_key(signed_value),
+                APIKey.is_revoked == False
+            ).first()
+            if rec:
+                if rec.expires_at and datetime.utcnow() > rec.expires_at:
+                    logger.warning("api_key_expired_legacy", api_key_id=rec.id)
+                    raise HTTPException(401, "API key has expired")
+                return rec
     
     return None
 
@@ -1259,7 +1271,17 @@ def ui_login_post(
             )
             
             resp = RedirectResponse(url="/", status_code=302)
-            resp.set_cookie(SESSION_COOKIE, sign(api_key), httponly=True, samesite="lax")
+            # Store an opaque API key session identifier instead of the raw API key
+            api_session_value = f"api:{rec.id}"
+            from sentrascan.core.session import SESSION_TIMEOUT_HOURS
+            resp.set_cookie(
+                SESSION_COOKIE,
+                sign(api_session_value),
+                httponly=True,
+                samesite="strict",
+                secure=os.environ.get("SENTRASCAN_COOKIE_SECURE", "false").lower() == "true",
+                max_age=SESSION_TIMEOUT_HOURS * 3600,
+            )
             return resp
         else:
             # No credentials provided

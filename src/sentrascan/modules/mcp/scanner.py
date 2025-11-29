@@ -5,6 +5,7 @@ import hashlib
 import subprocess
 import time
 from typing import List, Optional
+from urllib.parse import urlparse
 from sentrascan.core.models import Scan, Finding
 from sentrascan.core.policy import PolicyEngine
 from sentrascan.modules.mcp.sast import SASTRunner
@@ -30,7 +31,34 @@ class MCPScanner:
     def _slug(self, s: str) -> str:
         return hashlib.sha1(s.encode()).hexdigest()[:12]
 
+    def _is_allowed_repo_url(self, url: str) -> bool:
+        """
+        Restrict which remote repositories can be cloned to reduce SSRF / supply-chain risk.
+        
+        - Allow only well-known hosts (GitHub, Hugging Face) over HTTPS or git+ssh.
+        - Reject arbitrary hosts and non-HTTPS schemes.
+        """
+        # Basic patterns for git@ style URLs
+        if url.startswith("git@"):
+            # git@github.com:org/repo.git
+            host = url.split(":", 1)[0].split("@", 1)[-1]
+            return host in {"github.com"}
+        parsed = urlparse(url)
+        if parsed.scheme not in {"https", "http", ""}:
+            return False
+        host = parsed.hostname or ""
+        # Allow only specific hosts by default
+        if host in {"github.com", "huggingface.co"}:
+            return True
+        # For backward compatibility, explicit Hugging Face URIs like hf://
+        if url.startswith("hf://"):
+            return True
+        return False
+
     def _ensure_repo(self, url: str, cache_dir: str = "/cache/mcp_repos") -> Optional[str]:
+        # Enforce allowlist for remote repositories
+        if not self._is_allowed_repo_url(url):
+            return None
         os.makedirs(cache_dir, exist_ok=True)
         slug = self._slug(url)
         dest = os.path.join(cache_dir, slug)

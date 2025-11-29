@@ -38,7 +38,11 @@ def configure_logging(
     
     # Determine log directory
     if log_dir is None:
-        if os.path.exists("/app"):
+        # Allow overriding via environment variable (useful for read-only filesystems)
+        env_log_dir = os.environ.get("LOG_DIR")
+        if env_log_dir:
+            log_dir = env_log_dir
+        elif os.path.exists("/app"):
             log_dir = "/app/logs"
         else:
             log_dir = "./logs"

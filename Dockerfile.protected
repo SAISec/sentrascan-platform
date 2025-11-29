@@ -35,6 +35,8 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir semgrep && \
     pip install --no-cache-dir /wheels/* && \
     (pip install --no-cache-dir 'mcp>=1.0.0' || true) && \
+    # Minimal extra deps needed for analytics and in-container testing
+    pip install --no-cache-dir pandas && \
     pip install --no-cache-dir pytest pytest-playwright requests
 
 # Install Playwright browsers
@@ -72,6 +74,8 @@ RUN set -eux; \
 
 # Copy source code
 COPY src/ /build/src/
+# Copy tests (for running regression/acceptance tests inside protected image)
+COPY tests/ /build/tests/
 
 # CRITICAL: Compile Python to bytecode and remove source files
 # This prevents customers from reading your source code
@@ -112,16 +116,20 @@ COPY --from=builder --chown=nonroot:nonroot \
     /build/src \
     /app/src
 
+# Copy tests for in-container regression/acceptance runs
+COPY --from=builder --chown=nonroot:nonroot \
+    /build/tests \
+    /app/tests
+
 # Copy system tools (gitleaks, trufflehog)
 COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/gitleaks \
     /usr/local/bin/trufflehog \
     /usr/local/bin/
 
-# Copy uv if needed
-COPY --from=builder --chown=nonroot:nonroot \
-    /root/.local/bin/uv \
-    /usr/local/bin/uv || true
+# (Optional) uv binary from builder stage was previously copied here, but the
+# copy step caused build failures when the file was not present. Runtime
+# image does not require uv, so this step has been removed.
 
 # Build-time container access key (passed from builder stage)
 ARG CONTAINER_ACCESS_KEY=Sentrascan@25!
@@ -131,7 +139,14 @@ ENV CONTAINER_ACCESS_KEY=${CONTAINER_ACCESS_KEY}
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/usr/local/bin:${PATH}"
+# Ensure application package and its dependencies are importable:
+# - /usr/local/lib/python3.11/site-packages (copied from builder)
+# - /app/src (compiled bytecode tree)
+ENV PYTHONPATH="/usr/local/lib/python3.11/site-packages:/app/src:${PYTHONPATH}"
 ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
+# Use writable volume locations for logs and telemetry in protected image
+ENV LOG_DIR=/data/logs
+ENV TELEMETRY_DIR=/data/telemetry
 
 # Writable volumes (read-only filesystem except these)
 VOLUME ["/data", "/reports", "/sboms", "/cache"]
@@ -142,6 +157,7 @@ EXPOSE 8200
 USER nonroot
 
 # Entrypoint - NO SHELL AVAILABLE
+# Run CLI module directly; '__main__' guard in cli.py will invoke Click group.
 # Customers cannot run: docker exec -it container /bin/sh
 ENTRYPOINT ["/usr/bin/python3", "-m", "sentrascan.cli", "server", "--host", "0.0.0.0", "--port", "8200"]
 

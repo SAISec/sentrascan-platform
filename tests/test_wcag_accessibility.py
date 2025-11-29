@@ -367,10 +367,12 @@ def test_wcag_2_4_1_bypass_blocks(authenticated_page: Page, api_base):
     
     # Skip link should be visible on focus
     skip_link.focus()
-    is_visible = skip_link.evaluate("el => {
-        const style = window.getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden';
-    }")
+    is_visible = skip_link.evaluate(
+        "el => {"
+        "  const style = window.getComputedStyle(el);"
+        "  return style.display !== 'none' && style.visibility !== 'hidden';"
+        "}"
+    )
     assert is_visible, "Skip link not visible on focus"
 
 

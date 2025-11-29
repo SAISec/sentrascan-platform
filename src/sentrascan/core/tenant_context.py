@@ -80,6 +80,7 @@ def extract_tenant_from_request(request: Request, db: Session) -> Optional[str]:
     
     # Strategy 3: Get from session cookie (existing session auth)
     session_user = get_session_user(request, db)
+    session_role = None
     if session_user:
         # If session_user is an APIKey, get its tenant_id
         if isinstance(session_user, APIKey) and hasattr(session_user, 'tenant_id'):
@@ -89,10 +90,20 @@ def extract_tenant_from_request(request: Request, db: Session) -> Optional[str]:
         elif isinstance(session_user, User) and hasattr(session_user, 'tenant_id'):
             if session_user.tenant_id:
                 return session_user.tenant_id
+        # Capture role for header-based overrides
+        if hasattr(session_user, "role"):
+            session_role = getattr(session_user, "role")
     
     # Strategy 4: Check for tenant_id in request headers (for admin operations)
     tenant_header = request.headers.get("X-Tenant-ID") or request.headers.get("x-tenant-id")
     if tenant_header:
+        # Only super_admins are allowed to override tenant via header to avoid
+        # cross-tenant abuse and session forgery chains.
+        if session_role != "super_admin":
+            raise HTTPException(
+                status_code=403,
+                detail="X-Tenant-ID header is only allowed for super_admin users."
+            )
         # Validate that tenant exists
         from sentrascan.core.models import Tenant
         tenant = db.query(Tenant).filter(Tenant.id == tenant_header, Tenant.is_active == True).first()
