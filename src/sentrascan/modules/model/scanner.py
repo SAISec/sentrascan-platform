@@ -20,25 +20,44 @@ class ModelScanner:
         
         The model scanner should operate on local files or pre-fetched content.
         Remote URLs must be fetched via a separate, SSRF-safe component.
+        
+        Exception: Hugging Face URLs are allowed as modelaudit supports them natively
+        and they are from a trusted source.
         """
         safe_paths: List[str] = []
         for p in paths:
             if not isinstance(p, str):
                 continue
             parsed = urlparse(p)
-            # Disallow direct http/https URLs
+            # Allow Hugging Face URLs (modelaudit supports them natively)
             if parsed.scheme in ("http", "https"):
+                host = parsed.hostname or ""
+                if host == "huggingface.co" or host.endswith(".huggingface.co"):
+                    # Validate Hugging Face URL format: https://huggingface.co/user/model
+                    path_parts = parsed.path.strip("/").split("/")
+                    if len(path_parts) >= 2:
+                        safe_paths.append(p)
+                        continue
+                # Disallow other http/https URLs
                 raise ValueError(
                     f"Remote URLs are not allowed in model scan paths: {p}. "
-                    "Download artifacts to a local path first."
+                    "Only Hugging Face URLs (huggingface.co) are supported. "
+                    "For other sources, download artifacts to a local path first."
                 )
+            # Allow hf:// protocol (Hugging Face shorthand)
+            if p.startswith("hf://"):
+                safe_paths.append(p)
+                continue
+            # Allow local paths
             safe_paths.append(p)
         return safe_paths
 
     @staticmethod
     def doctor():
         try:
-            out = subprocess.run(["modelaudit", "doctor"], capture_output=True, text=True, check=False)
+            # Use python -m modelaudit for distroless containers
+            import sys
+            out = subprocess.run([sys.executable, "-m", "modelaudit", "doctor"], capture_output=True, text=True, check=False)
             ok = out.returncode == 0
             return ok, out.stdout.strip()
         except FileNotFoundError:
@@ -50,7 +69,9 @@ class ModelScanner:
         paths = self._validate_paths(paths or [])
         tmp_report = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         tmp_report.close()
-        args = ["modelaudit", "scan"] + list(paths)
+        # Use python -m modelaudit for distroless containers
+        import sys
+        args = [sys.executable, "-m", "modelaudit", "scan"] + list(paths)
         args += ["-f", "json", "-o", tmp_report.name]
         if strict:
             args += ["--strict"]
@@ -59,7 +80,16 @@ class ModelScanner:
             args += ["--sbom", sbom_path]
         if timeout and timeout > 0:
             args += ["-t", str(timeout)]
-        proc = subprocess.run(args, capture_output=True, text=True)
+        
+        # Set modelaudit cache directory to writable volume (read-only filesystem in protected container)
+        env = os.environ.copy()
+        modelaudit_cache = os.environ.get("MODELAUDIT_CACHE_DIR", "/cache/modelaudit")
+        os.makedirs(modelaudit_cache, exist_ok=True)
+        env["MODELAUDIT_CACHE_DIR"] = modelaudit_cache
+        # Also set HOME to writable location for modelaudit config
+        env["HOME"] = os.environ.get("HOME", "/cache")
+        
+        proc = subprocess.run(args, capture_output=True, text=True, env=env)
         report = {}
         if os.path.exists(tmp_report.name):
             with open(tmp_report.name, "r") as f:

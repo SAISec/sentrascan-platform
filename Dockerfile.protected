@@ -37,7 +37,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     (pip install --no-cache-dir 'mcp>=1.0.0' || true) && \
     # Minimal extra deps needed for analytics and in-container testing
     pip install --no-cache-dir pandas && \
-    pip install --no-cache-dir pytest pytest-playwright requests
+    pip install --no-cache-dir pytest pytest-playwright requests && \
+    # Model scanning dependency
+    pip install --no-cache-dir modelaudit
 
 # Install Playwright browsers
 RUN playwright install chromium && \

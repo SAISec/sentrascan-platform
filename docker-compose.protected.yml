@@ -18,7 +18,8 @@ services:
     environment:
       - DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
       - TEST_DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan_test
-      - MODELAUDIT_CACHE_DIR=/cache
+      - MODELAUDIT_CACHE_DIR=/cache/modelaudit
+      - SBOM_DIR=/reports/sboms
       # Container access key (must match build-time key)
       - SENTRASCAN_ACCESS_KEY=Sentrascan@25!
       # Session secret for secure cookies
@@ -38,6 +39,7 @@ services:
       - ./sboms:/sboms
       - ./cache:/cache
       - ./backups:/backups
+      - ./test-data:/test-data:ro
     # Security hardening
     security_opt:
       - no-new-privileges:true

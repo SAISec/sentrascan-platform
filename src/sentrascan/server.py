@@ -441,7 +441,19 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
     pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db) if policy_path else PolicyEngine.default_model(tenant_id=tenant_id, db=db)
     ms = ModelScanner(policy=pe)
     try:
-        scan = ms.scan(paths=paths, sbom_path=sbom and "./sboms/auto_sbom.json", strict=payload.get("strict", False), timeout=timeout, db=db, tenant_id=tenant_id)
+        # Use writable volume for SBOM (read-only filesystem in protected container)
+        import time as time_module
+        sbom_path = None
+        if sbom:
+            sbom_dir = os.environ.get("SBOM_DIR", "/reports/sboms")
+            os.makedirs(sbom_dir, exist_ok=True)
+            sbom_path = os.path.join(sbom_dir, f"auto_sbom_{int(time_module.time())}.json")
+        scan = ms.scan(paths=paths, sbom_path=sbom_path, strict=payload.get("strict", False), timeout=timeout, db=db, tenant_id=tenant_id)
+    except ValueError as e:
+        # Handle validation errors (e.g., SSRF prevention)
+        if "not allowed" in str(e).lower() or "url" in str(e).lower():
+            raise HTTPException(400, str(e))
+        raise
         
         # Capture telemetry
         telemetry.capture_scan_event(
