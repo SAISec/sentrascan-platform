@@ -57,6 +57,6 @@ class SASTRunner:
                 "line": line,
                 "rule_id": rule_id,
                 "message": message,
-                "engine": "semgrep",
+                "engine": "sentrascan-semgrep",
             })
         return normalized

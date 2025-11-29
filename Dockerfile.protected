@@ -135,6 +135,8 @@ COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/gitleaks \
     /usr/local/bin/trufflehog \
     /usr/local/bin/
+# Note: git is not available in distroless image
+# Repo cloning will use Python requests to download zip archives instead
 
 # (Optional) uv binary from builder stage was previously copied here, but the
 # copy step caused build failures when the file was not present. Runtime

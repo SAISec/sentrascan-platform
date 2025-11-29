@@ -83,7 +83,7 @@
         {
           label: 'Total Scans',
           data: data.scans || [],
-          borderColor: 'var(--color-primary)',
+          borderColor: '#2196f3',
           backgroundColor: 'rgba(33, 150, 243, 0.1)',
           tension: 0.4,
           fill: true
@@ -91,7 +91,7 @@
         {
           label: 'Passed',
           data: data.passed || [],
-          borderColor: 'var(--color-success)',
+          borderColor: '#4caf50',
           backgroundColor: 'rgba(76, 175, 80, 0.1)',
           tension: 0.4,
           fill: true
@@ -99,7 +99,7 @@
         {
           label: 'Failed',
           data: data.failed || [],
-          borderColor: 'var(--color-error)',
+          borderColor: '#f44336',
           backgroundColor: 'rgba(244, 67, 54, 0.1)',
           tension: 0.4,
           fill: true
@@ -111,7 +111,9 @@
       type: 'line',
       data: chartData,
       options: {
-        ...chartDefaults.options,
+        responsive: chartDefaults.responsive,
+        maintainAspectRatio: chartDefaults.maintainAspectRatio,
+        plugins: chartDefaults.plugins,
         ...options,
         interaction: {
           intersect: false,
@@ -167,10 +169,10 @@
           data.low || 0
         ],
         backgroundColor: [
-          'var(--color-severity-critical)',
-          'var(--color-severity-high)',
-          'var(--color-severity-medium)',
-          'var(--color-severity-low)'
+          '#9c27b0', // Critical - purple
+          '#f44336', // High - red
+          '#ff9800', // Medium - orange
+          '#4caf50'  // Low - green
         ],
         borderWidth: 2,
         borderColor: '#fff'
@@ -181,7 +183,9 @@
       type: isDonut ? 'doughnut' : 'pie',
       data: chartData,
       options: {
-        ...chartDefaults.options,
+        responsive: chartDefaults.responsive,
+        maintainAspectRatio: chartDefaults.maintainAspectRatio,
+        plugins: chartDefaults.plugins,
         ...options,
         cutout: isDonut ? '60%' : 0,
         onClick: (event, activeElements) => {
@@ -228,8 +232,8 @@
         label: 'Scans',
         data: [data.passed || 0, data.failed || 0],
         backgroundColor: [
-          'var(--color-success)',
-          'var(--color-error)'
+          '#4caf50', // Success - green
+          '#f44336'  // Error - red
         ],
         borderWidth: 0,
         borderRadius: 4
@@ -240,7 +244,9 @@
       type: 'bar',
       data: chartData,
       options: {
-        ...chartDefaults.options,
+        responsive: chartDefaults.responsive,
+        maintainAspectRatio: chartDefaults.maintainAspectRatio,
+        plugins: chartDefaults.plugins,
         ...options,
         scales: {
           ...chartDefaults.scales,

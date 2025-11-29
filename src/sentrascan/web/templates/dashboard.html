@@ -422,7 +422,10 @@
       // Remove page params for chart data
       params.delete('page');
       params.delete('page_size');
-      const response = await fetch(`/api/v1/dashboard/charts?${params.toString()}`);
+      params.delete('search');
+      params.delete('sort');
+      params.delete('order');
+      const response = await fetch(`/api/v1/dashboard/charts?${params.toString()}`, { credentials: 'include' });
       if (!response.ok) {
         throw new Error('Failed to load chart data');
       }

@@ -41,7 +41,7 @@ class RuntimeProbe:
                                 "category": "MCP.ToolSurface.Dynamic",
                                 "title": f"Arbitrary SQL tool exposed: {t.get('name')}",
                                 "description": "Runtime tool listing shows raw SQL execution surface.",
-                                "engine": "mcp-runtime",
+                                "engine": "sentrascan-mcpruntime",
                             })
                 except Exception:
                     # If the client is not available or handshake fails, we only confirm the process started

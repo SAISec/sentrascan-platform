@@ -4,8 +4,14 @@ import re
 import hashlib
 import subprocess
 import time
+import zipfile
+import tempfile
 from typing import List, Optional
 from urllib.parse import urlparse
+try:
+    import requests
+except ImportError:
+    requests = None
 from sentrascan.core.models import Scan, Finding
 from sentrascan.core.policy import PolicyEngine
 from sentrascan.modules.mcp.sast import SASTRunner
@@ -58,22 +64,88 @@ class MCPScanner:
     def _ensure_repo(self, url: str, cache_dir: str = "/cache/mcp_repos") -> Optional[str]:
         # Enforce allowlist for remote repositories
         if not self._is_allowed_repo_url(url):
+            import structlog
+            logger = structlog.get_logger()
+            logger.warning("mcp_repo_url_not_allowed", url=url)
             return None
         os.makedirs(cache_dir, exist_ok=True)
         slug = self._slug(url)
         dest = os.path.join(cache_dir, slug)
         if os.path.isdir(dest) and os.listdir(dest):
+            import structlog
+            logger = structlog.get_logger()
+            logger.info("mcp_repo_already_cloned", url=url, dest=dest)
             return dest
+        
+        import structlog
+        logger = structlog.get_logger()
+        
+        # Try git clone first (if git is available)
         try:
             env = os.environ.copy()
             # For Hugging Face, avoid pulling large LFS blobs by default
             if "huggingface.co" in url or url.startswith("hf://"):
                 env["GIT_LFS_SKIP_SMUDGE"] = "1"
             cmd = ["git", "clone", "--depth", "1", url, dest]
-            subprocess.run(cmd, env=env, check=True, capture_output=True, text=True, timeout=180)
-            return dest
-        except Exception:
+            logger.info("mcp_cloning_repo_git", url=url, dest=dest, cmd=" ".join(cmd))
+            result = subprocess.run(cmd, env=env, check=False, capture_output=True, text=True, timeout=180)
+            if result.returncode == 0:
+                logger.info("mcp_repo_cloned_successfully", url=url, dest=dest, method="git")
+                return dest
+            else:
+                logger.warning("mcp_repo_git_clone_failed", url=url, returncode=result.returncode, stderr=result.stderr[:200] if result.stderr else None)
+        except FileNotFoundError:
+            logger.info("mcp_git_not_available", url=url, message="git not found, trying zip download")
+        except subprocess.TimeoutExpired:
+            logger.warning("mcp_repo_git_clone_timeout", url=url, timeout=180)
+        except Exception as e:
+            logger.warning("mcp_repo_git_clone_exception", url=url, error=str(e), error_type=type(e).__name__)
+        
+        # Fallback: Download as zip archive (for GitHub repos)
+        try:
+            if "github.com" in url:
+                # Convert GitHub URL to zip download URL
+                # https://github.com/org/repo -> https://github.com/org/repo/archive/refs/heads/master.zip
+                zip_url = url.rstrip('/')
+                if not zip_url.endswith('.git'):
+                    zip_url = zip_url + '/archive/refs/heads/master.zip'
+                else:
+                    zip_url = zip_url.replace('.git', '/archive/refs/heads/master.zip')
+                
+                if requests is None:
+                    logger.error("mcp_requests_not_available", url=url, message="requests library not installed")
+                    return None
+                
+                logger.info("mcp_downloading_repo_zip", url=url, zip_url=zip_url, dest=dest)
+                response = requests.get(zip_url, timeout=180, stream=True)
+                response.raise_for_status()
+                
+                # Download to temp file first
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp_zip:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        tmp_zip.write(chunk)
+                    tmp_zip_path = tmp_zip.name
+                
+                # Extract zip to destination
+                os.makedirs(dest, exist_ok=True)
+                with zipfile.ZipFile(tmp_zip_path, 'r') as zip_ref:
+                    zip_ref.extractall(dest)
+                    # Zip files typically extract to a subdirectory, move contents up
+                    extracted_dirs = [d for d in os.listdir(dest) if os.path.isdir(os.path.join(dest, d))]
+                    if len(extracted_dirs) == 1:
+                        subdir = os.path.join(dest, extracted_dirs[0])
+                        for item in os.listdir(subdir):
+                            os.rename(os.path.join(subdir, item), os.path.join(dest, item))
+                        os.rmdir(subdir)
+                
+                os.unlink(tmp_zip_path)
+                logger.info("mcp_repo_downloaded_successfully", url=url, dest=dest, method="zip")
+                return dest
+        except Exception as e:
+            logger.error("mcp_repo_zip_download_failed", url=url, dest=dest, error=str(e), error_type=type(e).__name__, exc_info=True)
             return None
+        
+        return None
 
     def auto_discover(self) -> List[str]:
         paths = []
@@ -88,90 +160,183 @@ class MCPScanner:
                 paths.append(p)
         return list(dict.fromkeys(paths))
 
-    def scan(self, config_paths: List[str], auto_discover: bool, timeout: int, db, tenant_id: Optional[str] = None):
+    def scan(self, config_paths: List[str], auto_discover: bool, timeout: int, db, tenant_id: Optional[str] = None, existing_scan: Optional[Scan] = None):
         start = time.time()
-        scan = None
+        scan = existing_scan  # Use existing scan if provided
         try:
             if auto_discover:
                 config_paths = list(dict.fromkeys((config_paths or []) + self.auto_discover()))
-            scan = Scan(
-                scan_type="mcp", 
-                target_path=",".join(config_paths or ["auto"]), 
-                scan_status="in_progress",  # Scan is actively running
-                tenant_id=tenant_id
-            )
-            db.add(scan)
+            
+            # Create new scan only if no existing scan provided
+            if not scan:
+                scan = Scan(
+                    scan_type="mcp", 
+                    target_path=",".join(config_paths or ["auto"]), 
+                    scan_status="in_progress",  # Scan is actively running
+                    tenant_id=tenant_id
+                )
+                db.add(scan)
+            else:
+                # Update existing scan
+                scan.scan_status = "in_progress"
+                scan.target_path = ",".join(config_paths or ["auto"])
+                if tenant_id:
+                    scan.tenant_id = tenant_id
             db.flush()
             sev = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0}
             issue_types: List[str] = []
+            
+            # Track files and their issues for file-wise reporting
+            files_affected = set()
+            file_categories = {}  # {file_path: {category: count}}
+            file_category_issues = {}  # {file_path: {category: [issues]}}
+            
+            def clean_file_path(file_path: str) -> str:
+                """Clean file path by removing cache prefixes"""
+                if not file_path:
+                    return file_path
+                # Remove common cache prefixes
+                cache_prefixes = [
+                    "/cache/mcp_repos/",
+                    "/cache/.modelaudit/cache/",
+                    "/tmp/",
+                ]
+                for prefix in cache_prefixes:
+                    if prefix in file_path:
+                        # Try to find a meaningful part after the cache prefix
+                        idx = file_path.find(prefix)
+                        if idx >= 0:
+                            after_prefix = file_path[idx + len(prefix):]
+                            # If it's a git repo, try to find the repo name
+                            # Format: /cache/mcp_repos/<hash>/<repo_path>
+                            parts = after_prefix.split("/", 1)
+                            if len(parts) > 1:
+                                # Return the repo path part (skip the hash)
+                                return parts[1] if parts[1] else file_path
+                            return after_prefix if after_prefix else file_path
+                return file_path
+            
+            def track_file_issue(file_path: str, category: str, issue: dict):
+                """Track an issue for a specific file"""
+                if not file_path:
+                    return
+                cleaned_path = clean_file_path(file_path)
+                files_affected.add(cleaned_path)
+                if cleaned_path not in file_categories:
+                    file_categories[cleaned_path] = {}
+                if category not in file_categories[cleaned_path]:
+                    file_categories[cleaned_path][category] = 0
+                file_categories[cleaned_path][category] += 1
+                
+                if cleaned_path not in file_category_issues:
+                    file_category_issues[cleaned_path] = {}
+                if category not in file_category_issues[cleaned_path]:
+                    file_category_issues[cleaned_path][category] = []
+                file_category_issues[cleaned_path][category].append(issue)
 
             # Heuristic: derive repo paths from config json (look for --directory or absolute paths)
             repo_paths: List[str] = []
+            actual_config_paths: List[str] = []  # Separate config files from repo URLs
+            import structlog
+            logger = structlog.get_logger()
             try:
                 for p in (config_paths or []):
                     # If a config path is actually a repo URL, clone it
-                    if isinstance(p, str) and (p.endswith('.git') or p.startswith('git@') or p.startswith('https://github.com') or 'huggingface.co' in p):
+                    # Check for GitHub URLs (with or without .git), Hugging Face URLs, or git@ URLs
+                    is_repo_url = False
+                    if isinstance(p, str):
+                        p_lower = p.lower()
+                        if (p.endswith('.git') or 
+                            p.startswith('git@') or 
+                            p.startswith('https://github.com') or 
+                            p.startswith('http://github.com') or
+                            'github.com' in p_lower or
+                            'huggingface.co' in p_lower or
+                            p.startswith('hf://')):
+                            is_repo_url = True
+                    
+                    if is_repo_url:
+                        logger.info("mcp_scan_detected_repo_url", url=p)
                         rp = self._ensure_repo(p)
                         if rp:
                             repo_paths.append(rp)
+                            logger.info("mcp_scan_repo_cloned", url=p, path=rp)
+                        else:
+                            logger.warning("mcp_scan_repo_clone_failed", url=p)
                         continue
-                    # Otherwise treat as JSON config
-                    with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                        cfg = json.load(fh)
-                    servers = (cfg or {}).get("mcpServers") or {}
-                    for name, s in servers.items():
-                        args = s.get("args") or []
-                        for i, a in enumerate(args):
-                            if a == "--directory" and i + 1 < len(args):
-                                rp = args[i+1]
-                                # If this path doesn't exist but looks like URL, clone
-                                if not os.path.isdir(rp) and (rp.endswith('.git') or rp.startswith('git@') or rp.startswith('https://github.com') or 'huggingface.co' in rp):
-                                    rp2 = self._ensure_repo(rp)
-                                    if rp2:
-                                        repo_paths.append(rp2)
-                                elif os.path.isdir(rp):
-                                    repo_paths.append(rp)
-                            elif isinstance(a, str) and a.startswith("/") and os.path.isdir(a):
-                                repo_paths.append(a)
+                    # Otherwise treat as JSON config file
+                    if os.path.isfile(p):
+                        actual_config_paths.append(p)
+                        try:
+                            with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                                cfg = json.load(fh)
+                            servers = (cfg or {}).get("mcpServers") or {}
+                            for name, s in servers.items():
+                                args = s.get("args") or []
+                                for i, a in enumerate(args):
+                                    if a == "--directory" and i + 1 < len(args):
+                                        rp = args[i+1]
+                                        # If this path doesn't exist but looks like URL, clone
+                                        if not os.path.isdir(rp) and (rp.endswith('.git') or rp.startswith('git@') or rp.startswith('https://github.com') or 'huggingface.co' in rp or 'github.com' in rp):
+                                            rp2 = self._ensure_repo(rp)
+                                            if rp2:
+                                                repo_paths.append(rp2)
+                                        elif os.path.isdir(rp):
+                                            repo_paths.append(rp)
+                                    elif isinstance(a, str) and a.startswith("/") and os.path.isdir(a):
+                                        repo_paths.append(a)
+                        except Exception:
+                            pass
             except Exception:
                 pass
             repo_paths = [rp for rp in repo_paths if os.path.isdir(rp)]
 
-            # Try mcp-checkpoint (JSON to temp file)
+            # Try mcp-checkpoint (JSON to temp file) - only if we have actual config files
             try:
-                import tempfile
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-                tmp_path = tmp.name
-                tmp.close()
-                args = ["mcp-checkpoint", "scan", "--report-type", "json", "--output", tmp_path]
-                for p in (config_paths or []):
-                    args += ["--config", p]
-                subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-                try:
-                    with open(tmp_path, "r") as f:
-                        data = json.load(f)
-                except Exception:
-                    data = {"findings": []}
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
-                for iss in data.get("findings", []):
-                    severity = (iss.get("severity") or "HIGH").upper()
-                    key = severity.lower() + "_count"
-                    if key in sev:
-                        sev[key] += 1
-                    issue_types.append(iss.get("type") or "mcp_issue")
-                    f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
-                    db.add(f)
-                    cp_ok = True
+                if actual_config_paths:
+                    import tempfile
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                    tmp_path = tmp.name
+                    tmp.close()
+                    args = ["mcp-checkpoint", "scan", "--report-type", "json", "--output", tmp_path]
+                    for p in actual_config_paths:
+                        args += ["--config", p]
+                    subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                    try:
+                        with open(tmp_path, "r") as f:
+                            data = json.load(f)
+                    except Exception:
+                        data = {"findings": []}
+                    try:
+                        os.unlink(tmp_path)
+                    except Exception:
+                        pass
+                    for iss in data.get("findings", []):
+                        severity = (iss.get("severity") or "HIGH").upper()
+                        key = severity.lower() + "_count"
+                        if key in sev:
+                            sev[key] += 1
+                        issue_types.append(iss.get("type") or "mcp_issue")
+                        cat = iss.get("type", "unknown")
+                        file_path = iss.get("location") or iss.get("file") or iss.get("path") or ""
+                        # Clean file path and track
+                        cleaned_path = clean_file_path(file_path)
+                        if cleaned_path:
+                            track_file_issue(cleaned_path, cat, {
+                                "title": iss.get("title", "Issue"),
+                                "severity": severity,
+                                "description": iss.get("description", ""),
+                                "location": cleaned_path
+                            })
+                        f = Finding(scan_id=scan.id, module="mcp", scanner="sentrascan-mcpcheck", severity=severity, category=cat, title=iss.get("title", "Issue"), description=iss.get("description", ""), location=cleaned_path or file_path, evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
+                        db.add(f)
             except Exception:
                 pass
-            # Try Cisco YARA-only (raw JSON to stdout)
+            # Try Cisco YARA-only (raw JSON to stdout) - only if we have actual config files
             try:
-                if config_paths:
+                if actual_config_paths:
                     combined = {"findings": []}
-                    for p in config_paths:
+                    for p in actual_config_paths:
                         args = ["mcp-scanner", "--config-path", p, "--analyzers", "yara", "--format", "raw"]
                         out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
                         payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
@@ -182,7 +347,8 @@ class MCPScanner:
                             payload = {"findings": payload if isinstance(payload, list) else []}
                         combined["findings"].extend(payload["findings"])
                     data = combined
-                else:
+                elif not repo_paths:
+                    # Only try auto-discovery if we have no repo paths
                     args = ["mcp-scanner", "--scan-known-configs", "--analyzers", "yara", "--format", "raw"]
                     out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
                     payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
@@ -190,14 +356,33 @@ class MCPScanner:
                         data = payload
                     else:
                         data = {"findings": payload if isinstance(payload, list) else []}
+                else:
+                    data = {"findings": []}
                 for iss in data.get("findings", []):
                     severity = (iss.get("severity") or "HIGH").upper()
                     key = severity.lower() + "_count"
                     if key in sev:
                         sev[key] += 1
                     issue_types.append(iss.get("type") or "mcp_issue")
-                    f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
+                    cat = iss.get("type", "unknown")
+                    file_path = iss.get("location") or iss.get("file") or iss.get("path") or ""
+                    # Clean file path and track
+                    cleaned_path = clean_file_path(file_path)
+                    if cleaned_path:
+                        track_file_issue(cleaned_path, cat, {
+                            "title": iss.get("title", "Issue"),
+                            "severity": severity,
+                            "description": iss.get("description", ""),
+                            "location": cleaned_path
+                        })
+                    # Clean paths in evidence JSON
+                    evidence = iss.get("evidence") or {}
+                    if isinstance(evidence, dict):
+                        evidence = {k: clean_file_path(v) if isinstance(v, str) and ("cache" in v or "/tmp" in v) else v for k, v in evidence.items()}
+                    f = Finding(scan_id=scan.id, module="mcp", scanner="sentrascan-mcpyara", severity=severity, category=cat, title=iss.get("title", "Issue"), description=iss.get("description", ""), location=cleaned_path or file_path, evidence=evidence, tenant_id=tenant_id)
                     db.add(f)
+            except Exception:
+                pass
             except Exception:
                 pass
 
@@ -210,16 +395,29 @@ class MCPScanner:
                         if sev_key in sev:
                             sev[sev_key] += 1
                         issue_types.append("code_rule")
+                        file_path = rfind.get("location") or ""
+                        cleaned_path = clean_file_path(file_path)
+                        cat = rfind.get("category", "Code.Pattern")
+                        # Track file issue
+                        if cleaned_path:
+                            track_file_issue(cleaned_path, cat, {
+                                "title": rfind.get("title"),
+                                "severity": rfind.get("severity"),
+                                "description": rfind.get("description"),
+                                "location": cleaned_path
+                            })
+                        # Clean paths in evidence
+                        evidence = {"rule_id": rfind.get("rule_id")}
                         db.add(Finding(
                             scan_id=scan.id,
                             module="mcp",
                             scanner=rfind.get("engine"),
                             severity=rfind.get("severity"),
-                            category=rfind.get("category"),
+                            category=cat,
                             title=rfind.get("title"),
                             description=rfind.get("description"),
-                            location=rfind.get("location"),
-                            evidence={"rule_id": rfind.get("rule_id")},
+                            location=cleaned_path or file_path,
+                            evidence=evidence,
                             remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
                             tenant_id=tenant_id,
                         ))
@@ -236,127 +434,229 @@ class MCPScanner:
                             if sev_key in sev:
                                 sev[sev_key] += 1
                             issue_types.append("semgrep")
+                            file_path = sf.get("path") or ""
+                            line_num = sf.get("line")
+                            cleaned_path = clean_file_path(file_path)
+                            location_str = f"{cleaned_path}:{line_num}" if cleaned_path and line_num else (cleaned_path or file_path)
+                            cat = "SAST"
+                            # Track file issue
+                            if cleaned_path:
+                                track_file_issue(cleaned_path, cat, {
+                                    "title": sf.get("message"),
+                                    "severity": sf.get("severity"),
+                                    "description": sf.get("rule_id"),
+                                    "line_number": line_num,
+                                    "location": location_str
+                                })
+                            # Clean paths in evidence
+                            evidence = {"rule_id": sf.get("rule_id"), "line_number": line_num, "file_path": cleaned_path or file_path}
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
-                                scanner="semgrep",
+                                scanner="sentrascan-semgrep",
                                 severity=sf.get("severity"),
-                                category="SAST",
+                                category=cat,
                                 title=sf.get("message"),
                                 description=sf.get("rule_id"),
-                                location=f"{sf.get('path')}:{sf.get('line')}",
-                                evidence={"rule_id": sf.get("rule_id")},
+                                location=location_str,
+                                evidence=evidence,
                                 remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
-                                tenant_id=tenant_id,
-                            ))
-            except Exception:
+                            tenant_id=tenant_id,
+                        ))
+                    logger.info("mcp_scan_regex_rules_completed", repo_path=rp, findings_count=findings_count)
+            except Exception as e:
+                logger.error("mcp_scan_regex_rules_failed", error=str(e), exc_info=True)
                 pass
 
             # Handshake-like probe (static parsing of Tool defs)
             try:
+                if not repo_paths:
+                    logger.warning("mcp_scan_probe_skipped", reason="no repo paths")
                 for rp in repo_paths:
+                    logger.info("mcp_scan_probe_running", repo_path=rp)
                     probe = MCPProbe(rp)
                     tools = probe.enumerate_tools()
+                    logger.info("mcp_scan_probe_tools_found", repo_path=rp, tools_count=len(tools), tool_names=[t.get("name") for t in tools])
+                    findings_count = 0
                     for pf in probe.risk_assessment(tools):
+                        findings_count += 1
                         sev_key = (pf["severity"].lower() + "_count")
                         if sev_key in sev:
                             sev[sev_key] += 1
                         issue_types.append("mcp_probe")
+                        file_path = pf.get("location") or ""
+                        cleaned_path = clean_file_path(file_path)
+                        cat = pf.get("category", "MCP.ToolSurface")
+                        # Track file issue
+                        if cleaned_path:
+                            track_file_issue(cleaned_path, cat, {
+                                "title": pf.get("title"),
+                                "severity": pf.get("severity"),
+                                "description": pf.get("description"),
+                                "location": cleaned_path
+                            })
+                        # Clean paths in evidence
+                        evidence = {}
                         db.add(Finding(
                             scan_id=scan.id,
                             module="mcp",
                             scanner=pf.get("engine"),
                             severity=pf.get("severity"),
-                            category=pf.get("category"),
+                            category=cat,
                             title=pf.get("title"),
                             description=pf.get("description"),
-                            location=pf.get("location"),
-                            evidence={},
+                            location=cleaned_path or file_path,
+                            evidence=evidence,
                             remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
                             tenant_id=tenant_id,
                         ))
             except Exception:
                 pass
 
-            # Dynamic safe-run probe (best-effort)
+            # Dynamic safe-run probe (best-effort) - only if we have actual config files
             try:
-                for p in (config_paths or []):
-                    with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                        cfg = json.load(fh)
-                    for name, s in (cfg.get("mcpServers") or {}).items():
-                        cmd = s.get("command")
-                        args = s.get("args") or []
-                        env = s.get("env") or {}
-                        if cmd:
-                            rp = None
-                            for i, a in enumerate(args):
-                                if a == "--directory" and i + 1 < len(args):
-                                    rp = args[i+1]
-                                    break
-                            rtp = RuntimeProbe(cmd=cmd, args=args, env=env, cwd=rp or None, timeout=8)
-                            for rf in rtp.run():
-                                sev_key = (rf["severity"].lower() + "_count")
-                                if sev_key in sev:
-                                    sev[sev_key] += 1
-                                issue_types.append("mcp_runtime")
-                                db.add(Finding(
-                                    scan_id=scan.id,
-                                    module="mcp",
-                                    scanner=rf.get("engine"),
-                                    severity=rf.get("severity"),
-                                    category=rf.get("category"),
-                                    title=rf.get("title"),
-                                    description=rf.get("description"),
-                                    location=rp,
-                                    evidence={},
-                                    remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
-                                    tenant_id=tenant_id,
-                                ))
+                for p in actual_config_paths:
+                    try:
+                        with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                            cfg = json.load(fh)
+                        for name, s in (cfg.get("mcpServers") or {}).items():
+                            cmd = s.get("command")
+                            args = s.get("args") or []
+                            env = s.get("env") or {}
+                            if cmd:
+                                rp = None
+                                for i, a in enumerate(args):
+                                    if a == "--directory" and i + 1 < len(args):
+                                        rp = args[i+1]
+                                        break
+                                rtp = RuntimeProbe(cmd=cmd, args=args, env=env, cwd=rp or None, timeout=8)
+                                for rf in rtp.run():
+                                    sev_key = (rf["severity"].lower() + "_count")
+                                    if sev_key in sev:
+                                        sev[sev_key] += 1
+                                    issue_types.append("mcp_runtime")
+                                    file_path = rp or ""
+                                    cleaned_path = clean_file_path(file_path)
+                                    cat = rf.get("category", "MCP.ToolSurface.Dynamic")
+                                    # Track file issue
+                                    if cleaned_path:
+                                        track_file_issue(cleaned_path, cat, {
+                                            "title": rf.get("title"),
+                                            "severity": rf.get("severity"),
+                                            "description": rf.get("description"),
+                                            "location": cleaned_path
+                                        })
+                                    # Clean paths in evidence
+                                    evidence = rf.get("evidence") or {}
+                                    if isinstance(evidence, dict):
+                                        evidence = {k: clean_file_path(v) if isinstance(v, str) and ("cache" in v or "/tmp" in v) else v for k, v in evidence.items()}
+                                    db.add(Finding(
+                                        scan_id=scan.id,
+                                        module="mcp",
+                                        scanner=rf.get("engine"),
+                                        severity=rf.get("severity"),
+                                        category=cat,
+                                        title=rf.get("title"),
+                                        description=rf.get("description"),
+                                        location=cleaned_path or file_path,
+                                        evidence=evidence,
+                                        remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
+                                        tenant_id=tenant_id,
+                                    ))
+                    except Exception:
+                        continue
             except Exception:
                 pass
 
-            # Secrets scanners
+            # Secrets scanners (TruffleHog and Gitleaks for hardcoded API keys, tokens, etc.)
             try:
                 th = TruffleHogRunner()
                 gl = GitleaksRunner()
+                if not repo_paths:
+                    logger.warning("mcp_secrets_skipped", reason="no repo paths")
                 for rp in repo_paths:
                     if th.available():
-                        for s in th.run(rp):
+                        logger.info("mcp_trufflehog_running", repo_path=rp)
+                        findings_count = 0
+                        for s in th.run(rp, timeout=timeout):
+                            findings_count += 1
                             sev_key = (s["severity"].lower() + "_count")
                             if sev_key in sev:
                                 sev[sev_key] += 1
                             issue_types.append("secrets")
+                            file_path = s.get("location") or ""
+                            cleaned_path = clean_file_path(file_path)
+                            cat = "Secrets"
+                            # Track file issue
+                            if cleaned_path:
+                                track_file_issue(cleaned_path, cat, {
+                                    "title": s.get("title"),
+                                    "severity": s.get("severity"),
+                                    "description": s.get("description"),
+                                    "location": cleaned_path
+                                })
+                            # Clean paths in evidence
+                            evidence = s.get("evidence") or {}
+                            if isinstance(evidence, dict):
+                                evidence = {k: clean_file_path(v) if isinstance(v, str) and ("cache" in v or "/tmp" in v) else v for k, v in evidence.items()}
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
-                                scanner=s.get("engine"),
+                                scanner=s.get("engine") or "sentrascan-trufflehog",
                                 severity=s.get("severity"),
-                                category="Secrets",
+                                category=cat,
                                 title=s.get("title"),
                                 description=s.get("description"),
-                                location=s.get("location"),
-                                evidence=s.get("evidence"),
+                                location=cleaned_path or file_path,
+                                evidence=evidence,
                                 tenant_id=tenant_id,
                             ))
+                        logger.info("mcp_trufflehog_findings", repo_path=rp, findings_count=findings_count)
+                        db.flush() # Persist findings
+                    else:
+                        logger.info("mcp_trufflehog_skipped", reason="not available")
                     if gl.available():
-                        for s in gl.run(rp):
+                        logger.info("mcp_gitleaks_running", repo_path=rp)
+                        findings_count = 0
+                        for s in gl.run(rp, timeout=timeout):
+                            findings_count += 1
                             sev_key = (s["severity"].lower() + "_count")
                             if sev_key in sev:
                                 sev[sev_key] += 1
                             issue_types.append("secrets")
+                            file_path = s.get("location") or ""
+                            cleaned_path = clean_file_path(file_path)
+                            cat = "Secrets"
+                            # Track file issue
+                            if cleaned_path:
+                                track_file_issue(cleaned_path, cat, {
+                                    "title": s.get("title"),
+                                    "severity": s.get("severity"),
+                                    "description": s.get("description"),
+                                    "location": cleaned_path
+                                })
+                            # Clean paths in evidence
+                            evidence = s.get("evidence") or {}
+                            if isinstance(evidence, dict):
+                                evidence = {k: clean_file_path(v) if isinstance(v, str) and ("cache" in v or "/tmp" in v) else v for k, v in evidence.items()}
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
-                                scanner=s.get("engine"),
+                                scanner=s.get("engine") or "sentrascan-gitleaks",
                                 severity=s.get("severity"),
-                                category="Secrets",
+                                category=cat,
                                 title=s.get("title"),
                                 description=s.get("description"),
-                                location=s.get("location"),
-                                evidence=s.get("evidence"),
+                                location=cleaned_path or file_path,
+                                evidence=evidence,
                                 tenant_id=tenant_id,
                             ))
-            except Exception:
+                        logger.info("mcp_gitleaks_findings", repo_path=rp, findings_count=findings_count)
+                        db.flush() # Persist findings
+                    else:
+                        logger.info("mcp_gitleaks_skipped", reason="not available")
+            except Exception as e:
+                logger.error("mcp_secrets_scan_failed", error=str(e), exc_info=True)
                 pass
 
             # ZAP baseline removed - no longer supported
@@ -366,14 +666,38 @@ class MCPScanner:
             scan.high_count = sev["high_count"]
             scan.medium_count = sev["medium_count"]
             scan.low_count = sev["low_count"]
-            
+
             # Set scan result: Pass or Fail based on policy gate
             scan.passed = self.policy.gate(sev, issue_types)
-            
+
             # Set scan status: completed (scan finished successfully)
             scan.scan_status = "completed"
-            
+
+            # Flush findings before commit to ensure they're persisted
+            try:
+                db.flush()
+            except Exception as e:
+                import structlog
+                logger = structlog.get_logger()
+                logger.error("mcp_scan_flush_failed", scan_id=scan.id, error=str(e), exc_info=True)
+                db.rollback()
+                raise
+
             db.commit()
+            
+            import structlog
+            logger = structlog.get_logger()
+            logger.info("mcp_scan_completed", 
+                       scan_id=scan.id, 
+                       total_findings=scan.total_findings,
+                       critical=scan.critical_count,
+                       high=scan.high_count,
+                       medium=scan.medium_count,
+                       low=scan.low_count,
+                       passed=scan.passed,
+                       repo_paths_count=len(repo_paths),
+                       config_paths_count=len(actual_config_paths))
+            
             return scan
         except subprocess.TimeoutExpired:
             # Scan timed out - mark as aborted

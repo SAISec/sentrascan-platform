@@ -459,7 +459,15 @@ def scan_model(payload: dict, request: Request, user_or_key=Depends(require_auth
     default_timeout = scanner_timeouts.get("model_timeout", payload.get("timeout", 0))
     timeout = payload.get("timeout", default_timeout)
     
-    pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db) if policy_path else PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+    # Handle policy: if None, empty string, or ".sentrascan.yaml" (default), use default policy
+    if not policy_path or policy_path.strip() == "" or policy_path == ".sentrascan.yaml":
+        pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+    else:
+        try:
+            pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db)
+        except FileNotFoundError:
+            # If policy file doesn't exist, fall back to default
+            pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
     ms = ModelScanner(policy=pe)
     try:
         # Use writable volume for SBOM (read-only filesystem in protected container)
@@ -552,7 +560,15 @@ def scan_mcp(payload: dict, request: Request, user_or_key=Depends(require_auth),
     timeout = payload.get("timeout", default_timeout)
     
     policy_path = payload.get("policy")
-    pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db) if policy_path else PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+    # Handle policy: if None, empty string, or ".sentrascan.yaml" (default), use default policy
+    if not policy_path or policy_path.strip() == "" or policy_path == ".sentrascan.yaml":
+        pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+    else:
+        try:
+            pe = PolicyEngine.from_file(policy_path, tenant_id=tenant_id, db=db)
+        except FileNotFoundError:
+            # If policy file doesn't exist, fall back to default
+            pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
     scanner = MCPScanner(policy=pe)
     try:
         scan = scanner.scan(config_paths=configs, auto_discover=auto, timeout=timeout, db=db, tenant_id=tenant_id)
@@ -611,17 +627,35 @@ class JobRunner(Thread):
                     job["on_done"](scan.id)
                 elif job["type"] == "mcp":
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
-                    if existing:
-                        # Update existing scan status to in_progress when job starts
-                        existing.scan_status = "in_progress"
-                        db.commit()
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
                     pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
                     scanner = MCPScanner(policy=pe)
-                    scan = scanner.scan(config_paths=job.get("config_paths") or [], auto_discover=job.get("auto_discover", True), timeout=job.get("timeout", 60), db=db, tenant_id=tenant_id)
+                    # Pass existing scan to scanner to update it instead of creating a new one
+                    scan = scanner.scan(config_paths=job.get("config_paths") or [], auto_discover=job.get("auto_discover", True), timeout=job.get("timeout", 60), db=db, tenant_id=tenant_id, existing_scan=existing)
                     job["on_done"](scan.id)
-            except Exception:
-                pass
+            except Exception as e:
+                # Log the error and mark scan as failed if it exists
+                import structlog
+                logger = structlog.get_logger()
+                logger.error("job_runner_error", 
+                           job_type=job.get("type"), 
+                           existing_scan_id=job.get("existing_scan_id"),
+                           error=str(e), 
+                           error_type=type(e).__name__,
+                           exc_info=True)
+                # Try to mark the scan as failed if it exists
+                try:
+                    if db:
+                        existing_scan_id = job.get("existing_scan_id")
+                        if existing_scan_id:
+                            existing = db.query(Scan).filter(Scan.id == existing_scan_id).first()
+                            if existing and existing.scan_status == "in_progress":
+                                existing.scan_status = "failed"
+                                existing.passed = False
+                                db.commit()
+                                logger.info("job_scan_marked_failed", scan_id=existing_scan_id)
+                except Exception as db_err:
+                    logger.error("job_runner_db_error", error=str(db_err), exc_info=True)
             finally:
                 if db:
                     db.close()
@@ -1057,6 +1091,100 @@ def dashboard_stats(request: Request, user_or_key=Depends(require_auth), db: Ses
         "high_count": int(high_count),
         "medium_count": int(medium_count),
         "low_count": int(low_count),
+    }
+
+@app.get("/api/v1/dashboard/charts")
+def dashboard_charts(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None, date_from: str | None = None, date_to: str | None = None):
+    """Get chart data for dashboard analytics (tenant-scoped)"""
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
+    q = db.query(Scan)
+    # Filter by tenant_id
+    q = filter_by_tenant(q, Scan, tenant_id)
+    
+    # Apply filters
+    if type:
+        q = q.filter(Scan.scan_type == type)
+    if passed in ("true","false"):
+        q = q.filter(Scan.passed == (passed == "true"))
+    
+    # Apply time range filter
+    cutoff = None
+    if time_range:
+        now = datetime.utcnow()
+        if time_range == "7d":
+            cutoff = now - timedelta(days=7)
+        elif time_range == "30d":
+            cutoff = now - timedelta(days=30)
+        elif time_range == "90d":
+            cutoff = now - timedelta(days=90)
+        if cutoff:
+            q = q.filter(Scan.created_at >= cutoff)
+    
+    if date_from:
+        try:
+            date_from_obj = datetime.strptime(date_from, "%Y-%m-%d")
+            q = q.filter(Scan.created_at >= date_from_obj)
+        except ValueError:
+            pass
+    
+    if date_to:
+        try:
+            date_to_obj = datetime.strptime(date_to, "%Y-%m-%d")
+            # Include the entire day
+            date_to_obj = date_to_obj.replace(hour=23, minute=59, second=59)
+            q = q.filter(Scan.created_at <= date_to_obj)
+        except ValueError:
+            pass
+    
+    # Get all scans for chart data
+    all_scans = q.order_by(Scan.created_at.asc()).all()
+    
+    # Build trends data (group by day)
+    trends_data = {}
+    for scan in all_scans:
+        date_key = scan.created_at.strftime("%Y-%m-%d") if scan.created_at else None
+        if not date_key:
+            continue
+        if date_key not in trends_data:
+            trends_data[date_key] = {"scans": 0, "passed": 0, "failed": 0}
+        trends_data[date_key]["scans"] += 1
+        if scan.passed:
+            trends_data[date_key]["passed"] += 1
+        else:
+            trends_data[date_key]["failed"] += 1
+    
+    # Sort by date
+    sorted_dates = sorted(trends_data.keys())
+    trends = {
+        "labels": sorted_dates,
+        "scans": [trends_data[d]["scans"] for d in sorted_dates],
+        "passed": [trends_data[d]["passed"] for d in sorted_dates],
+        "failed": [trends_data[d]["failed"] for d in sorted_dates]
+    }
+    
+    # Build severity distribution
+    severity = {
+        "critical": sum(s.critical_count or 0 for s in all_scans),
+        "high": sum(s.high_count or 0 for s in all_scans),
+        "medium": sum(s.medium_count or 0 for s in all_scans),
+        "low": sum(s.low_count or 0 for s in all_scans)
+    }
+    
+    # Build pass/fail ratio
+    passed_count = sum(1 for s in all_scans if s.passed)
+    failed_count = sum(1 for s in all_scans if not s.passed)
+    pass_fail = {
+        "labels": ["Passed", "Failed"],
+        "passed": passed_count,
+        "failed": failed_count
+    }
+    
+    return {
+        "trends": trends,
+        "severity": severity,
+        "passFail": pass_fail
     }
 
 @app.get("/api/v1/dashboard/export")
@@ -1904,7 +2032,7 @@ def ui_scan_form(request: Request):
         db.close()
 
 @app.post("/ui/scan/model")
-def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str = Form(...), strict: bool = Form(False), generate_sbom: bool = Form(True), policy: str | None = Form(None), run_async: bool = Form(False)):
+def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str = Form(...), strict: bool = Form(False), generate_sbom: bool = Form(True), policy: str | None = Form(None), run_async: bool = Form(True)):
     # prefer session user; fallback to form
     db = get_db_session()
     try:
@@ -1912,7 +2040,11 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
         rec = user
         if not rec and api_key:
             rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-        if not rec or rec.role != "admin":
+        if not rec:
+            return RedirectResponse(url="/login", status_code=302)
+        
+        # Check permission instead of role (allows both admin and super_admin)
+        if not check_permission(rec, "scan.create"):
             return RedirectResponse(url="/login", status_code=302)
         
         # Get tenant_id from user or API key
@@ -1929,8 +2061,24 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
         if not tenant_id:
             return RedirectResponse(url="/login?error=tenant_required", status_code=302)
         
-        pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db) if policy else PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+        # Handle policy: if None, empty string, or ".sentrascan.yaml" (default), use default policy
+        if not policy or policy.strip() == "" or policy == ".sentrascan.yaml":
+            pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+        else:
+            try:
+                pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db)
+            except FileNotFoundError:
+                # If policy file doesn't exist, fall back to default
+                pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
         ms = ModelScanner(policy=pe)
+        # Use writable volume for SBOM (read-only filesystem in protected container)
+        import time as time_module
+        sbom_path = None
+        if generate_sbom:
+            sbom_dir = os.environ.get("SBOM_DIR", "/reports/sboms")
+            os.makedirs(sbom_dir, exist_ok=True)
+            sbom_path = os.path.join(sbom_dir, f"ui_sbom_{int(time_module.time())}.json")
+        
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
             scan = ScanModel(scan_type="model", target_path=model_path, scan_status="waiting_to_start", tenant_id=tenant_id)
@@ -1940,7 +2088,7 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
             job_queue.put({
                 "type": "model",
                 "paths": [model_path],
-                "sbom_path": "./sboms/ui_sbom.json" if generate_sbom else None,
+                "sbom_path": sbom_path,
                 "strict": strict,
                 "timeout": 0,
                 "existing_scan_id": scan.id,
@@ -1949,13 +2097,13 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
             })
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
         else:
-            scan = ms.scan(paths=[model_path], sbom_path="./sboms/ui_sbom.json" if generate_sbom else None, strict=strict, timeout=0, db=db, tenant_id=tenant_id)
+            scan = ms.scan(paths=[model_path], sbom_path=sbom_path, strict=strict, timeout=0, db=db, tenant_id=tenant_id)
             return RedirectResponse(url=f"/scan/{scan.id}", status_code=303)
     finally:
         db.close()
 
 @app.post("/ui/scan/mcp")
-def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool = Form(True), config_paths: str | None = Form(None), policy: str | None = Form(None), run_async: bool = Form(False)):
+def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool = Form(True), config_paths: str | None = Form(None), policy: str | None = Form(None), run_async: bool = Form(True)):
     db = get_db_session()
     try:
         user = get_session_user(request, db)
@@ -1975,9 +2123,21 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
             return RedirectResponse(url="/login?error=tenant_required", status_code=302)
         if not rec and api_key:
             rec = db.query(APIKey).filter(APIKey.key_hash == APIKey.hash_key(api_key), APIKey.is_revoked == False).first()
-        if not rec or rec.role != "admin":
+        if not rec:
             return RedirectResponse(url="/login", status_code=302)
-        pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db) if policy else PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+        
+        # Check permission instead of role (allows both admin and super_admin)
+        if not check_permission(rec, "scan.create"):
+            return RedirectResponse(url="/login", status_code=302)
+        # Handle policy: if None, empty string, or ".sentrascan.yaml" (default), use default policy
+        if not policy or policy.strip() == "" or policy == ".sentrascan.yaml":
+            pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+        else:
+            try:
+                pe = PolicyEngine.from_file(policy, tenant_id=tenant_id, db=db)
+            except FileNotFoundError:
+                # If policy file doesn't exist, fall back to default
+                pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
         scanner = MCPScanner(policy=pe)
         paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
         if run_async:

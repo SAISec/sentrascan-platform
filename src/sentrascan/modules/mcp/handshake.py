@@ -19,15 +19,27 @@ class MCPProbe:
 
     def find_server_files(self) -> List[str]:
         candidates = []
+        # First, try to find server.py files with "mcp" in path or filename
         for root, _, files in os.walk(self.repo_path):
             for f in files:
-                if f.endswith("server.py") and ("mcp" in root or "_mcp_" in root or "mcp" in f):
+                if f.endswith("server.py") and ("mcp" in root.lower() or "_mcp_" in root.lower() or "mcp" in f.lower()):
                     candidates.append(os.path.join(root, f))
-        # Fallback: any server.py under src/
+        # Fallback: any server.py under src/ (common MCP server structure)
         if not candidates:
-            for root, _, files in os.walk(os.path.join(self.repo_path, "src")):
+            src_path = os.path.join(self.repo_path, "src")
+            if os.path.isdir(src_path):
+                for root, _, files in os.walk(src_path):
+                    for f in files:
+                        if f == "server.py" or f.endswith("_server.py") or f.endswith("server.py"):
+                            candidates.append(os.path.join(root, f))
+        # Additional fallback: look for any Python file with "server" in name in common locations
+        if not candidates:
+            for root, _, files in os.walk(self.repo_path):
+                # Skip hidden and build directories
+                if any(skip in root for skip in [".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"]):
+                    continue
                 for f in files:
-                    if f == "server.py":
+                    if f.endswith(".py") and ("server" in f.lower() or "mcp" in f.lower()):
                         candidates.append(os.path.join(root, f))
         return candidates
 
@@ -92,28 +104,85 @@ class MCPProbe:
         for t in tools:
             name = (t.get("name") or "").lower()
             schema = t.get("inputSchema") or {}
-            # Heuristic: any tool named execute_sql or containing a free-form 'query' string parameter
             risky = False
             reasons: List[str] = []
+            severity = "HIGH"
+            
+            # Detect arbitrary code execution tools
+            if "execute" in name and ("code" in name or "script" in name or "python" in name or "blender_code" in name):
+                risky = True
+                severity = "HIGH"
+                reasons.append("Tool name suggests arbitrary code execution (RCE risk)")
+            
+            # Detect SQL execution tools
             if "execute_sql" in name or (name.startswith("execute_") and name.endswith("_sql")):
                 risky = True
+                severity = "CRITICAL"
                 reasons.append("Tool name suggests arbitrary SQL execution")
+            
+            # Check for free-form code/codeblock parameters
             try:
                 props = (schema or {}).get("properties") or {}
-                if isinstance(props, dict) and "query" in props:
-                    p = props.get("query") or {}
-                    if isinstance(p, dict) and p.get("type") == "string":
-                        risky = True
-                        reasons.append("Tool inputSchema includes free-form 'query' string")
+                if isinstance(props, dict):
+                    # Check for code, script, query, command parameters
+                    for param_name in ["code", "script", "query", "command", "python_code", "blender_code"]:
+                        if param_name in props:
+                            p = props.get(param_name) or {}
+                            if isinstance(p, dict) and p.get("type") == "string":
+                                risky = True
+                                if param_name in ["code", "script", "python_code", "blender_code"]:
+                                    severity = "HIGH"
+                                    reasons.append(f"Tool inputSchema includes free-form '{param_name}' string parameter (RCE risk)")
+                                elif param_name == "query":
+                                    severity = "CRITICAL"
+                                    reasons.append("Tool inputSchema includes free-form 'query' string")
+                                else:
+                                    severity = "HIGH"
+                                    reasons.append(f"Tool inputSchema includes free-form '{param_name}' string parameter")
             except Exception:
                 pass
+            
+            # Check for file path parameters without validation
+            try:
+                props = (schema or {}).get("properties") or {}
+                if isinstance(props, dict):
+                    for param_name in ["path", "file", "file_path", "image_path", "input_image", "filename"]:
+                        if param_name in props:
+                            p = props.get(param_name) or {}
+                            if isinstance(p, dict) and p.get("type") == "string":
+                                # Check if there's a description mentioning validation or sandboxing
+                                desc = (p.get("description") or "").lower()
+                                if "sandbox" not in desc and "validate" not in desc and "allowlist" not in desc:
+                                    risky = True
+                                    severity = "HIGH"
+                                    reasons.append(f"Tool accepts '{param_name}' file path parameter without apparent validation (LFI risk)")
+            except Exception:
+                pass
+            
+            # Check for URL parameters without validation
+            try:
+                props = (schema or {}).get("properties") or {}
+                if isinstance(props, dict):
+                    for param_name in ["url", "image", "uri", "link", "endpoint"]:
+                        if param_name in props:
+                            p = props.get(param_name) or {}
+                            if isinstance(p, dict) and p.get("type") == "string":
+                                desc = (p.get("description") or "").lower()
+                                if "allowlist" not in desc and "whitelist" not in desc and "validate" not in desc:
+                                    risky = True
+                                    if severity != "CRITICAL":
+                                        severity = "MEDIUM"
+                                    reasons.append(f"Tool accepts '{param_name}' URL parameter without apparent validation (SSRF risk)")
+            except Exception:
+                pass
+            
             if risky:
                 findings.append({
-                    "severity": "CRITICAL",
+                    "severity": severity,
                     "category": "MCP.ToolSurface",
-                    "title": f"Potential arbitrary SQL execution surface: tool '{t.get('name')}'",
+                    "title": f"Security risk in tool '{t.get('name')}': {reasons[0] if reasons else 'Potential security vulnerability'}",
                     "description": "; ".join(reasons),
                     "location": t.get("source"),
-                    "engine": "mcp-probe",
+                    "engine": "sentrascan-mcpprobe",
                 })
         return findings

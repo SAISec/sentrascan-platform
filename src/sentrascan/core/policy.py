@@ -55,6 +55,19 @@ class PolicyEngine:
 
     @staticmethod
     def from_file(path: str, tenant_id: Optional[str] = None, db: Optional[Session] = None):
+        # Handle empty or None path
+        if not path or path.strip() == "":
+            raise ValueError("Policy file path cannot be empty")
+        
+        # Check if file exists
+        if not os.path.exists(path):
+            # If file doesn't exist, fall back to default policy
+            # This handles cases where .sentrascan.yaml is expected but not present
+            if path == ".sentrascan.yaml" or path.endswith(".sentrascan.yaml"):
+                # Return default model policy if .sentrascan.yaml is missing
+                return PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+            raise FileNotFoundError(f"Policy file not found: {path}")
+        
         with open(path, "r") as f:
             data = yaml.safe_load(f)
         # try both unified and module-specific keys

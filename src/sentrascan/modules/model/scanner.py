@@ -205,13 +205,18 @@ class ModelScanner:
                     pass
             
             # Process findings - modelaudit returns issues with "message" as string, not dict
+            # Track files and their issues for file-wise reporting
+            files_affected = set()
+            file_categories = {}  # {file_path: {category: count}}
+            file_category_issues = {}  # {file_path: {category: [issues]}}
+            
             findings_processed = 0
             for iss in findings:
                 try:
                     severity = (iss.get("severity") or iss.get("level") or "info").upper()
-                    # Severity mapping: critical→critical, warning→medium, info→info (no change)
+                    # Severity mapping: Critical→Critical, Warning→Low, Info→Info
                     if severity == "WARNING":
-                        severity = "MEDIUM"
+                        severity = "LOW"
                     # Keep "CRITICAL" and "INFO" as-is
                     
                     cat = iss.get("type") or iss.get("category") or iss.get("ruleId") or "unknown"
@@ -219,6 +224,62 @@ class ModelScanner:
                     key = (severity.lower() + "_count")
                     if key in sev_counts:
                         sev_counts[key] += 1
+                    
+                    # Extract file path and line number from modelaudit output
+                    file_path = None
+                    line_number = None
+                    
+                    # Try multiple locations for file path
+                    location_raw = iss.get("location") or iss.get("file") or iss.get("path") or ""
+                    if location_raw:
+                        # If location contains line number (e.g., "file.py:42" or "file.py:42:10")
+                        if ":" in location_raw:
+                            parts = location_raw.split(":")
+                            file_path = parts[0]
+                            if len(parts) > 1:
+                                try:
+                                    line_number = int(parts[1])
+                                except (ValueError, IndexError):
+                                    pass
+                        else:
+                            file_path = location_raw
+                    
+                    # Also check details for file and line information
+                    details = iss.get("details") or {}
+                    if isinstance(details, dict):
+                        if not file_path:
+                            file_path = details.get("file") or details.get("file_path") or details.get("path")
+                        if not line_number:
+                            line_number = details.get("line") or details.get("line_number") or details.get("line_no")
+                            if line_number:
+                                try:
+                                    line_number = int(line_number)
+                                except (ValueError, TypeError):
+                                    line_number = None
+                    
+                    # Clean up file path: remove cache prefix and show from huggingface onwards
+                    if file_path and "/cache/.modelaudit/cache/" in file_path:
+                        cache_index = file_path.find("/cache/.modelaudit/cache/")
+                        if cache_index >= 0:
+                            after_cache = file_path[cache_index + 26:]  # len("/cache/.modelaudit/cache/") = 26
+                            if "huggingface" in after_cache:
+                                hf_index = after_cache.find("huggingface")
+                                if hf_index >= 0:
+                                    file_path = after_cache[hf_index:]
+                    
+                    # Track file information
+                    if file_path:
+                        files_affected.add(file_path)
+                        if file_path not in file_categories:
+                            file_categories[file_path] = {}
+                        if cat not in file_categories[file_path]:
+                            file_categories[file_path][cat] = 0
+                        file_categories[file_path][cat] += 1
+                        
+                        if file_path not in file_category_issues:
+                            file_category_issues[file_path] = {}
+                        if cat not in file_category_issues[file_path]:
+                            file_category_issues[file_path][cat] = []
                     
                     # Extract title - message can be string or dict
                     title = iss.get("title")
@@ -245,33 +306,108 @@ class ModelScanner:
                         if isinstance(details, dict):
                             remediation = details.get("recommendation") or ""
                     
+                    # Build location string with file path and line number
+                    location_str = None
+                    if file_path:
+                        if line_number:
+                            location_str = f"{file_path}:{line_number}"
+                        else:
+                            location_str = file_path
+                    elif location_raw:
+                        location_str = location_raw
+                    
+                    # Enhance evidence with file and line number information
+                    evidence = iss.get("details") or iss.get("evidence") or {}
+                    if isinstance(evidence, dict):
+                        evidence = evidence.copy()
+                    else:
+                        evidence = {}
+                    
+                    # Clean file paths in evidence (recursively clean paths in nested structures)
+                    def clean_path_in_dict(obj):
+                        """Recursively clean file paths in dictionaries and lists"""
+                        if isinstance(obj, dict):
+                            cleaned = {}
+                            for key, value in obj.items():
+                                if key in ["file", "file_path", "path", "location"] and isinstance(value, str):
+                                    # Clean the path
+                                    cleaned_value = value
+                                    if "/cache/.modelaudit/cache/" in cleaned_value:
+                                        cache_index = cleaned_value.find("/cache/.modelaudit/cache/")
+                                        if cache_index >= 0:
+                                            after_cache = cleaned_value[cache_index + 26:]
+                                            if "huggingface" in after_cache:
+                                                hf_index = after_cache.find("huggingface")
+                                                if hf_index >= 0:
+                                                    cleaned_value = after_cache[hf_index:]
+                                    cleaned[key] = cleaned_value
+                                elif isinstance(value, (dict, list)):
+                                    cleaned[key] = clean_path_in_dict(value)
+                                else:
+                                    cleaned[key] = value
+                            return cleaned
+                        elif isinstance(obj, list):
+                            return [clean_path_in_dict(item) for item in obj]
+                        else:
+                            return obj
+                    
+                    # Clean paths in evidence
+                    evidence = clean_path_in_dict(evidence)
+                    
+                    # Add file and line number to evidence for reporting
+                    if file_path:
+                        evidence["file_path"] = file_path  # file_path is already cleaned above
+                    if line_number:
+                        evidence["line_number"] = line_number
+                    
+                    # Clean raw_issue paths as well
+                    raw_issue_cleaned = clean_path_in_dict(iss) if isinstance(iss, dict) else iss
+                    evidence["raw_issue"] = raw_issue_cleaned
+                    
                     # Limit field lengths to avoid database errors
                     title_str = (title[:500] if title else "Issue")
                     description_str = (description[:2000] if description else "")
-                    location_str = (iss.get("location") or "")[:500] if iss.get("location") else None
+                    location_str = (location_str[:500] if location_str else None)
                     remediation_str = (remediation[:1000] if remediation else "")
                     
                     f = Finding(
                         scan_id=scan.id,
                         module="model",
-                        scanner="modelaudit",
-                        severity=severity,  # Keep original severity (CRITICAL, MEDIUM, INFO)
+                        scanner="sentrascan-modelcheck",
+                        severity=severity,  # CRITICAL, LOW, INFO
                         category=cat[:100] if cat else "unknown",  # Limit category length
                         title=title_str,
                         description=description_str,
-                        location=location_str,
-                        evidence=iss.get("details") or iss.get("evidence") or {},
+                        location=location_str,  # Format: "file_path:line_number" or "file_path"
+                        evidence=evidence,  # Contains file_path, line_number, and raw_issue
                         remediation=remediation_str,
                         tenant_id=tenant_id,
                     )
                     db.add(f)
                     findings_processed += 1
+                    
+                    # Track issue in file_category_issues (only for non-INFO severities)
+                    if file_path and cat and severity.upper() not in ["INFO"]:
+                        file_category_issues[file_path][cat].append({
+                            "title": title_str,
+                            "severity": severity,
+                            "line_number": line_number,
+                            "location": location_str,
+                            "description": description_str
+                        })
                 except Exception as e:
                     # Log error but continue processing other findings
                     import structlog
                     logger = structlog.get_logger()
                     logger.warning("finding_creation_error", error=str(e), issue_keys=list(iss.keys()) if isinstance(iss, dict) else [])
                     continue
+            
+            # Store file-wise summary in scan metadata
+            scan.meta = scan.meta or {}
+            scan.meta["files_affected_count"] = len(files_affected)
+            scan.meta["files_affected"] = list(files_affected)
+            scan.meta["file_categories"] = file_categories
+            scan.meta["file_category_issues"] = file_category_issues
             
             # Flush findings before updating scan counts to ensure they're in the session
             try:

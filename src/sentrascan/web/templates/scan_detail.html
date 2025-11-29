@@ -149,6 +149,155 @@
   </div>
 </div>
 
+<!-- File-Wise Breakdown (for model and mcp scans) -->
+{% if (scan.scan_type == 'model' or scan.scan_type == 'mcp') and scan.meta and scan.meta.get('files_affected_count') %}
+<div class="file-breakdown card" style="margin-bottom: var(--spacing-xl);">
+  <div class="file-breakdown-header" style="padding: var(--spacing-md); cursor: pointer; user-select: none;" onclick="toggleFileBreakdown(event)">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2 style="margin: 0; display: flex; align-items: center; gap: var(--spacing-sm);">
+        <button class="file-breakdown-toggle" id="file-breakdown-toggle" onclick="toggleFileBreakdown(event)" aria-label="Toggle file breakdown" aria-expanded="false" style="background: none; border: none; cursor: pointer; padding: var(--spacing-xs); transition: transform var(--transition-base); display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px;" type="button">
+          <span aria-hidden="true" style="display: inline-block;">▶</span>
+        </button>
+        File-Wise Breakdown
+        <span style="font-size: var(--font-size-base); font-weight: var(--font-weight-normal); color: var(--color-text-secondary);">
+          - {{ scan.meta.get('files_affected_count', 0) }} files affected
+        </span>
+      </h2>
+    </div>
+  </div>
+  
+  <div class="file-breakdown-content" id="file-breakdown-content" style="display: none; padding: 0 var(--spacing-md) var(--spacing-md) var(--spacing-md);">
+    {% set file_categories = scan.meta.get('file_categories', {}) %}
+    {% set file_category_issues = scan.meta.get('file_category_issues', {}) %}
+    {% set files_affected = scan.meta.get('files_affected', []) %}
+    
+    {% for file_path in files_affected %}
+      {% set display_path = file_path %}
+      {% if '/cache/.modelaudit/cache/' in file_path %}
+        {% set cache_index = file_path.find('/cache/.modelaudit/cache/') %}
+        {% if cache_index >= 0 %}
+          {% set after_cache = file_path[cache_index + 26:] %}
+          {% if 'huggingface' in after_cache %}
+            {% set hf_index = after_cache.find('huggingface') %}
+            {% if hf_index >= 0 %}
+              {% set display_path = after_cache[hf_index:] %}
+            {% endif %}
+          {% endif %}
+        {% endif %}
+      {% endif %}
+      
+      {% set file_issues = file_category_issues.get(file_path, {}) %}
+      {% set has_non_info_issues = false %}
+      {% for category, issues in file_issues.items() %}
+        {% for issue in issues %}
+          {% if issue.severity and issue.severity.upper() not in ['INFO'] %}
+            {% set has_non_info_issues = true %}
+          {% endif %}
+        {% endfor %}
+      {% endfor %}
+      
+      {% if has_non_info_issues %}
+      <div class="file-section" style="margin-top: var(--spacing-lg); padding: var(--spacing-md); border: 1px solid var(--color-border-light); border-radius: var(--radius-md);">
+        <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-lg);">
+          <code style="background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ display_path }}</code>
+        </h3>
+        
+        {% if file_categories.get(file_path) %}
+        <div style="margin-bottom: var(--spacing-md);">
+          <strong>Categories:</strong>
+          <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-top: var(--spacing-xs);">
+            {% for category, count in file_categories.get(file_path, {}).items() %}
+            <span class="badge badge-neutral" style="font-size: var(--font-size-sm);">
+              {{ category }}: {{ count }}
+            </span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+        
+        {% if file_category_issues.get(file_path) %}
+        <div class="file-issues">
+          <strong>Issues by Category:</strong>
+          {% for category, issues in file_category_issues.get(file_path, {}).items() %}
+            {% set filtered_issues = [] %}
+            {% for issue in issues %}
+              {% if issue.severity and issue.severity.upper() not in ['INFO'] %}
+                {% set _ = filtered_issues.append(issue) %}
+              {% endif %}
+            {% endfor %}
+            {% if filtered_issues|length > 0 %}
+            <div style="margin-top: var(--spacing-md); padding: var(--spacing-md); background: var(--color-gray-50); border-radius: var(--radius-sm);">
+              <h4 style="margin: 0 0 var(--spacing-sm) 0; font-size: var(--font-size-base); font-weight: var(--font-weight-medium);">
+                <span class="badge badge-neutral">{{ category }}</span>
+                <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary); margin-left: var(--spacing-xs);">
+                  ({{ filtered_issues|length }} issue{{ 's' if filtered_issues|length != 1 else '' }})
+                </span>
+              </h4>
+              <ul style="margin: var(--spacing-sm) 0 0 0; padding-left: var(--spacing-lg); list-style-type: disc;">
+                {% for issue in filtered_issues %}
+                <li style="margin-bottom: var(--spacing-xs);">
+                  <strong>{{ issue.title }}</strong>
+                  {% if issue.line_number %}
+                  <span class="badge badge-info" style="margin-left: var(--spacing-xs); font-size: var(--font-size-xs);">
+                    Line {{ issue.line_number }}
+                  </span>
+                  {% endif %}
+                  {% if issue.severity %}
+                  <span class="badge badge-{{ issue.severity.lower() }}" style="margin-left: var(--spacing-xs); font-size: var(--font-size-xs);">
+                    {{ issue.severity }}
+                  </span>
+                  {% endif %}
+                  {% if issue.description %}
+                  <div style="margin-top: var(--spacing-xs); font-size: var(--font-size-sm); color: var(--color-text-secondary);">
+                    {{ issue.description[:200] }}{% if issue.description|length > 200 %}...{% endif %}
+                  </div>
+                  {% endif %}
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<script>
+function toggleFileBreakdown(event) {
+  if (event) {
+    event.stopPropagation();
+  }
+  const content = document.getElementById('file-breakdown-content');
+  const toggle = document.getElementById('file-breakdown-toggle');
+  if (!content || !toggle) {
+    return;
+  }
+  const isHidden = content.style.display === 'none' || !content.style.display;
+  if (isHidden) {
+    content.style.display = 'block';
+    toggle.setAttribute('aria-expanded', 'true');
+    const span = toggle.querySelector('span');
+    if (span) {
+      span.textContent = '⌄';
+    }
+    toggle.style.transform = 'rotate(90deg)';
+  } else {
+    content.style.display = 'none';
+    toggle.setAttribute('aria-expanded', 'false');
+    const span = toggle.querySelector('span');
+    if (span) {
+      span.textContent = '▶';
+    }
+    toggle.style.transform = 'rotate(0deg)';
+  }
+}
+</script>
+{% endif %}
+
 <!-- Findings Section -->
 <div class="findings-section">
   <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg); flex-wrap: wrap; gap: var(--spacing-md);">
@@ -297,6 +446,18 @@
                     <div style="margin-bottom: var(--spacing-md);">
                       <strong>Location:</strong>
                       <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm);">{{ finding.location }}</code>
+                    </div>
+                    {% endif %}
+                    {% if finding.evidence and finding.evidence.get('line_number') %}
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>Line Number:</strong>
+                      <span class="badge badge-info" style="margin-left: var(--spacing-xs);">{{ finding.evidence.get('line_number') }}</span>
+                    </div>
+                    {% endif %}
+                    {% if finding.evidence and finding.evidence.get('file_path') %}
+                    <div style="margin-bottom: var(--spacing-md);">
+                      <strong>File Path:</strong>
+                      <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ finding.evidence.get('file_path') }}</code>
                     </div>
                     {% endif %}
                     {% if finding.evidence %}
