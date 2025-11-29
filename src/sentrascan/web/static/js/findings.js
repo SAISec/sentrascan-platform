@@ -108,10 +108,12 @@
     `;
     
     findings.forEach(finding => {
-      const severityClass = `badge-${finding.severity}`;
+      // Normalize severity to lowercase for CSS classes (database has uppercase)
+      const severityLower = (finding.severity || '').toLowerCase();
+      const severityClass = `badge-${severityLower}`;
       html += `
         <tr class="finding-row" 
-            data-severity="${escapeHtml(finding.severity)}"
+            data-severity="${escapeHtml(finding.severity || '')}"
             data-category="${escapeHtml(finding.category || '')}"
             data-scanner="${escapeHtml(finding.scanner || '')}">
           <td>

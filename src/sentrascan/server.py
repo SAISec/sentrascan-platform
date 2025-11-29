@@ -2026,7 +2026,23 @@ def list_all_findings(
     
     # Apply filters
     if severity:
-        query = query.filter(Finding.severity == severity)
+        # Handle case-insensitive severity matching (database has uppercase, frontend may send lowercase)
+        severity_upper = severity.upper()
+        # Map common severity values
+        severity_map = {
+            'CRITICAL': ['CRITICAL', 'critical'],
+            'HIGH': ['HIGH', 'high'],
+            'MEDIUM': ['MEDIUM', 'medium'],
+            'LOW': ['LOW', 'low'],
+            'INFO': ['INFO', 'info']
+        }
+        # If severity is a known value, check both uppercase and lowercase
+        if severity_upper in severity_map:
+            query = query.filter(Finding.severity.in_(severity_map[severity_upper]))
+        else:
+            # Fallback to case-insensitive match
+            from sqlalchemy import func
+            query = query.filter(func.upper(Finding.severity) == severity_upper)
     if category:
         query = query.filter(Finding.category == category)
     if scanner:

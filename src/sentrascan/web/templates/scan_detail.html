@@ -210,10 +210,10 @@
 
   <!-- Findings by Severity Groups -->
   {% set severity_groups = {
-    'critical': findings|selectattr('severity', 'equalto', 'critical')|list,
-    'high': findings|selectattr('severity', 'equalto', 'high')|list,
-    'medium': findings|selectattr('severity', 'equalto', 'medium')|list,
-    'low': findings|selectattr('severity', 'equalto', 'low')|list
+    'critical': findings|selectattr('severity', 'equalto', 'CRITICAL')|list + findings|selectattr('severity', 'equalto', 'critical')|list,
+    'high': findings|selectattr('severity', 'equalto', 'HIGH')|list + findings|selectattr('severity', 'equalto', 'high')|list,
+    'medium': findings|selectattr('severity', 'equalto', 'MEDIUM')|list + findings|selectattr('severity', 'equalto', 'medium')|list,
+    'low': findings|selectattr('severity', 'equalto', 'LOW')|list + findings|selectattr('severity', 'equalto', 'low')|list + findings|selectattr('severity', 'equalto', 'INFO')|list
   } %}
   
   {% for severity in ['critical', 'high', 'medium', 'low'] %}
