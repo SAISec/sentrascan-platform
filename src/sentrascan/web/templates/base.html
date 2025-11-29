@@ -133,7 +133,7 @@
                     aria-expanded="false" 
                     style="display: flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: none; border: 1px solid var(--color-border-light); border-radius: var(--radius-md); cursor: pointer; transition: all var(--transition-fast);">
               <span style="font-size: var(--font-size-sm); color: var(--color-text-secondary);">
-                {% if user.name %}{{ user.name }}{% else %}User{% endif %}
+                {% if user and user.name %}{{ user.name }}{% else %}User{% endif %}
               </span>
               <span class="icon icon-chevron-down icon-sm" aria-hidden="true"></span>
             </button>
@@ -142,7 +142,7 @@
                  aria-hidden="true"
                  style="display: none; position: absolute; top: 100%; right: 0; margin-top: var(--spacing-xs); background: var(--color-bg-primary); border: 1px solid var(--color-border-light); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); min-width: 180px; z-index: var(--z-index-dropdown);">
               <ul style="list-style: none; margin: 0; padding: var(--spacing-xs);">
-                {% if user.role in ['super_admin', 'tenant_admin'] %}
+                {% if user and user.role in ['super_admin', 'tenant_admin'] %}
                 <li>
                   <a href="/users" 
                      role="menuitem"
@@ -151,7 +151,7 @@
                   </a>
                 </li>
                 {% endif %}
-                {% if user.role == 'super_admin' %}
+                {% if user and user.role == 'super_admin' %}
                 <li>
                   <a href="/tenants" 
                      role="menuitem"
@@ -160,7 +160,7 @@
                   </a>
                 </li>
                 {% endif %}
-                {% if user.role in ['tenant_admin', 'super_admin'] %}
+                {% if user and user.role in ['tenant_admin', 'super_admin'] %}
                 <li>
                   <a href="/tenant-settings" 
                      role="menuitem"

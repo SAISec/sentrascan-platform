@@ -36,7 +36,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function loadTenants() {
-        fetch('/api/v1/tenants')
+        fetch('/api/v1/tenants', {
+            credentials: 'include'
+        })
             .then(response => {
                 if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
@@ -160,7 +162,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         fetch(url, {
             method: method,
-            body: submitData
+            body: submitData,
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {
@@ -188,7 +191,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Global functions for inline handlers
     window.editTenant = function(tenantId) {
-        fetch(`/api/v1/tenants/${tenantId}`)
+        fetch(`/api/v1/tenants/${tenantId}`, {
+            credentials: 'include'
+        })
             .then(response => response.json())
             .then(tenant => {
                 openTenantModal(tenant);
@@ -204,7 +209,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         fetch(`/api/v1/tenants/${tenantId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {
@@ -223,7 +229,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     window.activateTenant = function(tenantId) {
         fetch(`/api/v1/tenants/${tenantId}/activate`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {

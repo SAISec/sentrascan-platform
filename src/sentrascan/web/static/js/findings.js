@@ -45,11 +45,10 @@
       apiUrl.searchParams.set('sort', sort);
       apiUrl.searchParams.set('order', order);
       
-      // Get API key from session (if available)
-      // For now, we'll need to handle authentication differently
-      // This is a simplified version - in production, you'd use proper session handling
-      
-      const response = await fetch(apiUrl.toString());
+      // Include credentials (cookies) for session-based authentication
+      const response = await fetch(apiUrl.toString(), {
+        credentials: 'include'
+      });
       
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {

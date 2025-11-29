@@ -36,7 +36,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     function loadUsers() {
-        fetch('/api/v1/users')
+        fetch('/api/v1/users', {
+            credentials: 'include'
+        })
             .then(response => {
                 if (!response.ok) {
                     if (response.status === 401 || response.status === 403) {
@@ -170,7 +172,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         fetch(url, {
             method: method,
-            body: submitData
+            body: submitData,
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {
@@ -208,7 +211,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Global functions for inline handlers
     window.editUser = function(userId) {
-        fetch(`/api/v1/users/${userId}`)
+        fetch(`/api/v1/users/${userId}`, {
+            credentials: 'include'
+        })
             .then(response => response.json())
             .then(user => {
                 openUserModal(user);
@@ -224,7 +229,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         fetch(`/api/v1/users/${userId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {
@@ -243,7 +249,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     window.activateUser = function(userId) {
         fetch(`/api/v1/users/${userId}/activate`, {
-            method: 'POST'
+            method: 'POST',
+            credentials: 'include'
         })
         .then(response => {
             if (!response.ok) {

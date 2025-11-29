@@ -327,6 +327,27 @@ def require_api_key(x_api_key: str | None = Header(default=None), db: Session = 
                 rec.tenant_id = user.tenant_id
     
     return rec
+
+def require_auth(request: Request, x_api_key: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """
+    Require authentication via either API key or session cookie.
+    Returns User object or APIKey object (both have role and tenant_id attributes).
+    """
+    # Try API key first
+    if x_api_key:
+        try:
+            return require_api_key(x_api_key, db)
+        except HTTPException:
+            pass  # Fall through to session check
+    
+    # Try session cookie
+    user = get_session_user(request, db)
+    if user:
+        return user
+    
+    # No authentication found
+    raise HTTPException(401, "Authentication required. Please provide API key or login.")
+
 templates = Jinja2Templates(directory=os.path.join(os.path.dirname(__file__), "web", "templates"))
 
 # Add version to template context
@@ -394,20 +415,20 @@ def health():
     return {"status": "ok"}
 
 @app.post("/api/v1/models/scans")
-def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def scan_model(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     # RBAC: only admin can trigger scans
-    if not check_permission(api_key, "scan.create"):
+    if not check_permission(user_or_key, "scan.create"):
         logger.warning(
             "scan_denied",
             reason="insufficient_permission",
             required_permission="scan.create",
-            user_role=get_user_role(api_key),
-            api_key_id=getattr(api_key, "id", None)
+            user_role=get_user_role(user_or_key),
+            api_key_id=getattr(user_or_key, "id", None)
         )
         raise HTTPException(403, "Permission denied: scan.create required")
     # Validate required fields
     if not payload:
-        logger.warning("scan_validation_failed", reason="missing_payload", api_key_id=getattr(api_key, "id", None))
+        logger.warning("scan_validation_failed", reason="missing_payload", api_key_id=getattr(user_or_key, "id", None))
         raise HTTPException(400, "Request body is required")
     paths = payload.get("paths") or ([payload.get("model_path")] if payload.get("model_path") else None)
     
@@ -423,7 +444,7 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
     
     logger.info(
         "model_scan_started",
-        api_key_id=getattr(api_key, "id", None),
+        api_key_id=getattr(user_or_key, "id", None),
         tenant_id=tenant_id,
         paths_count=len(paths) if paths else 0,
         payload_keys=list(payload.keys())
@@ -460,7 +481,7 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
             scan_type="model",
             scan_id=str(scan.id),
             status="completed",
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             findings_count=scan.total_findings,
             duration_ms=scan.duration_ms if hasattr(scan, "duration_ms") else None
         )
@@ -468,7 +489,7 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
         logger.info(
             "model_scan_completed",
             scan_id=scan.id,
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             total_findings=scan.total_findings,
             passed=scan.passed
         )
@@ -477,7 +498,7 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
     except Exception as e:
         logger.error(
             "model_scan_failed",
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             error=str(e),
             error_type=type(e).__name__,
             exc_info=True
@@ -486,20 +507,20 @@ def scan_model(payload: dict, request: Request, api_key=Depends(require_api_key)
             scan_type="model",
             scan_id="unknown",
             status="failed",
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             error=str(e)
         )
         raise
 @app.post("/api/v1/mcp/scans")
-def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def scan_mcp(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     # RBAC: require scan.create permission
-    if not check_permission(api_key, "scan.create"):
+    if not check_permission(user_or_key, "scan.create"):
         logger.warning(
             "scan_denied",
             reason="insufficient_role",
             required_role="admin",
-            user_role=getattr(api_key, "role", "unknown"),
-            api_key_id=getattr(api_key, "id", None),
+            user_role=getattr(user_or_key, "role", "unknown"),
+            api_key_id=getattr(user_or_key, "id", None),
             scan_type="mcp"
         )
         raise HTTPException(403, "Insufficient role: admin required")
@@ -518,7 +539,7 @@ def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), 
     
     logger.info(
         "mcp_scan_started",
-        api_key_id=getattr(api_key, "id", None),
+        api_key_id=getattr(user_or_key, "id", None),
         tenant_id=tenant_id,
         config_paths_count=len(configs),
         auto_discover=auto,
@@ -538,7 +559,7 @@ def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), 
         logger.info(
             "mcp_scan_completed",
             scan_id=scan.id,
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             total_findings=scan.total_findings,
             passed=scan.passed
         )
@@ -546,7 +567,7 @@ def scan_mcp(payload: dict, request: Request, api_key=Depends(require_api_key), 
     except Exception as e:
         logger.error(
             "mcp_scan_failed",
-            api_key_id=getattr(api_key, "id", None),
+            api_key_id=getattr(user_or_key, "id", None),
             error=str(e),
             error_type=type(e).__name__,
             exc_info=True
@@ -635,7 +656,7 @@ def on_startup():
 
 # Baselines API
 @app.get("/api/v1/baselines")
-def list_baselines(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def list_baselines(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     rows = db.query(Baseline).order_by(Baseline.created_at.desc()).limit(100).all()
     return [
         {
@@ -650,7 +671,7 @@ def list_baselines(api_key=Depends(require_api_key), db: Session = Depends(get_d
     ]
 
 @app.get("/api/v1/baselines/{baseline_id}")
-def get_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def get_baseline(baseline_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
     if not b:
         raise HTTPException(404, "Baseline not found")
@@ -709,9 +730,9 @@ def ui_create_baseline(request: Request, name: str = Form(...), description: str
     return RedirectResponse(url=f"/baselines", status_code=303)
 
 @app.post("/api/v1/baselines")
-def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def create_baseline(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     # RBAC: require scan.create permission (baselines are tied to scans)
-    if not check_permission(api_key, "scan.create"):
+    if not check_permission(user_or_key, "scan.create"):
         raise HTTPException(403, "Permission denied: scan.create required")
     required = ["baseline_type", "name", "content"]
     if not all(k in payload for k in required):
@@ -732,9 +753,9 @@ def create_baseline(payload: dict, api_key=Depends(require_api_key), db: Session
     return {"id": b.id}
 
 @app.delete("/api/v1/baselines/{baseline_id}")
-def delete_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def delete_baseline(baseline_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     # RBAC: require scan.delete permission (baselines are tied to scans)
-    if not check_permission(api_key, "scan.delete"):
+    if not check_permission(user_or_key, "scan.delete"):
         raise HTTPException(403, "Permission denied: scan.delete required")
     
     b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
@@ -755,7 +776,7 @@ def delete_baseline(baseline_id: str, api_key=Depends(require_api_key), db: Sess
     return {"status": "deleted"}
 
 @app.post("/api/v1/baselines/compare")
-def compare_baselines(payload: dict, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def compare_baselines(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     left_id = payload.get("left_id")
     right_id = payload.get("right_id")
     if not (left_id and right_id):
@@ -941,7 +962,7 @@ def ui_baseline_compare(left: str, right: str, request: Request):
         db.close()
 
 # Scans API
-def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def list_scans(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     # RBAC: viewers and admins can list
     rows = db.query(Scan).order_by(Scan.created_at.desc()).limit(100).all()
     return [
@@ -960,7 +981,7 @@ def list_scans(api_key=Depends(require_api_key), db: Session = Depends(get_db)):
     ]
 
 @app.get("/api/v1/scans")
-def list_scans(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, limit: int = 50, offset: int = 0):
+def list_scans(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, limit: int = 50, offset: int = 0):
     # Require tenant context
     tenant_id = require_tenant(request, db)
     
@@ -988,7 +1009,7 @@ def list_scans(request: Request, api_key=Depends(require_api_key), db: Session =
     ]
 
 @app.get("/api/v1/dashboard/stats")
-def dashboard_stats(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None):
+def dashboard_stats(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db), type: str | None = None, passed: str | None = None, time_range: str | None = None):
     """Get dashboard statistics (tenant-scoped)"""
     # Require tenant context
     tenant_id = require_tenant(request, db)
@@ -1039,7 +1060,7 @@ def dashboard_stats(request: Request, api_key=Depends(require_api_key), db: Sess
     }
 
 @app.get("/api/v1/dashboard/export")
-def dashboard_export(request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "json", type: str | None = None, passed: str | None = None, time_range: str | None = None):
+def dashboard_export(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db), format: str = "json", type: str | None = None, passed: str | None = None, time_range: str | None = None):
     """Export dashboard data as CSV or JSON (tenant-scoped)"""
     # Require tenant context
     tenant_id = require_tenant(request, db)
@@ -1121,7 +1142,7 @@ def dashboard_export(request: Request, api_key=Depends(require_api_key), db: Ses
         }
 
 @app.get("/api/v1/scans/{scan_id}")
-def get_scan(scan_id: str, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
+def get_scan(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     scan = db.query(Scan).filter(Scan.id == scan_id).first()
     if not scan:
         raise HTTPException(404, "Scan not found")
@@ -1153,8 +1174,15 @@ def get_scan(scan_id: str, request: Request, api_key=Depends(require_api_key), d
     }
 
 @app.get("/api/v1/scans/{scan_id}/report")
-def download_report(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+def download_report(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
+    # Filter by tenant
+    q_scan = db.query(Scan).filter(Scan.id == scan_id)
+    q_scan = filter_by_tenant(q_scan, Scan, tenant_id)
+    scan = q_scan.first()
+    
     if not scan:
         raise HTTPException(404, "Scan not found")
     # Reconstruct a normalized report similar to to_report
@@ -1172,8 +1200,15 @@ def download_report(scan_id: str, api_key=Depends(require_api_key), db: Session 
     }
 
 @app.get("/api/v1/scans/{scan_id}/sbom")
-def download_sbom(scan_id: str, api_key=Depends(require_api_key), db: Session = Depends(get_db)):
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+def download_sbom(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
+    # Filter by tenant
+    q_scan = db.query(Scan).filter(Scan.id == scan_id)
+    q_scan = filter_by_tenant(q_scan, Scan, tenant_id)
+    scan = q_scan.first()
+    
     if not scan:
         raise HTTPException(404, "Scan not found")
     if not scan.sbom_id:
@@ -1188,7 +1223,17 @@ from fastapi import Form
 
 @app.get("/login")
 def ui_login(request: Request):
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    db = get_db_session()
+    try:
+        # Try to get user from session, but don't fail if not logged in
+        user = get_session_user(request, db)
+        tenant = None
+        if user and hasattr(user, 'tenant_id') and user.tenant_id:
+            from sentrascan.core.models import Tenant
+            tenant = db.query(Tenant).filter(Tenant.id == user.tenant_id).first()
+        return templates.TemplateResponse("login.html", {"request": request, "user": user, "tenant": tenant, "error": None})
+    finally:
+        db.close()
 
 @app.post("/login")
 def ui_login_post(
@@ -1387,51 +1432,64 @@ def get_docs_file(file_path: str):
     if '..' in file_path or file_path.startswith('/'):
         raise HTTPException(400, "Invalid file path")
     
-    # Construct file path
-    docs_dir = Path(__file__).parent.parent.parent / "docs"
-    file_path_obj = docs_dir / file_path
+    # Construct file path - docs are in /app/docs in Docker container
+    # Try multiple possible locations
+    possible_docs_dirs = [
+        Path("/app/docs"),  # Docker container location
+        Path(__file__).parent.parent.parent / "docs",  # Development location
+        Path(os.environ.get("DOCS_DIR", "/app/docs")),  # Environment variable override
+    ]
     
-    # Ensure file is within docs directory
-    try:
-        file_path_obj.resolve().relative_to(docs_dir.resolve())
-    except ValueError:
-        raise HTTPException(400, "Invalid file path")
+    file_path_obj = None
+    docs_dir_used = None
     
-    # Check if file exists
-    if not file_path_obj.exists() or not file_path_obj.is_file():
-        raise HTTPException(404, "File not found")
+    for docs_dir in possible_docs_dirs:
+        if docs_dir.exists() and docs_dir.is_dir():
+            # Try direct file path first
+            test_path = docs_dir / file_path
+            try:
+                # Ensure file is within docs directory (security check)
+                test_path.resolve().relative_to(docs_dir.resolve())
+                if test_path.exists() and test_path.is_file():
+                    file_path_obj = test_path
+                    docs_dir_used = docs_dir
+                    break
+            except ValueError:
+                pass
+            
+            # If not found, try with README.md suffix for directory paths
+            # e.g., "getting-started" -> "getting-started/README.md"
+            test_path = docs_dir / file_path
+            if test_path.exists() and test_path.is_dir():
+                test_path = test_path / "README.md"
+                try:
+                    test_path.resolve().relative_to(docs_dir.resolve())
+                    if test_path.exists() and test_path.is_file():
+                        file_path_obj = test_path
+                        docs_dir_used = docs_dir
+                        break
+                except ValueError:
+                    pass
+            
+            # Also try file_path/README.md directly
+            test_path = docs_dir / file_path / "README.md"
+            try:
+                test_path.resolve().relative_to(docs_dir.resolve())
+                if test_path.exists() and test_path.is_file():
+                    file_path_obj = test_path
+                    docs_dir_used = docs_dir
+                    break
+            except ValueError:
+                pass
     
-    # Read and return file
-    try:
-        content = file_path_obj.read_text(encoding='utf-8')
-        return Response(content=content, media_type="text/markdown; charset=utf-8")
-    except Exception as e:
-        logger.error("error_reading_docs_file", file_path=file_path, error=str(e))
-        raise HTTPException(500, "Error reading file")
-
-@app.get("/api/v1/docs/raw/{file_path:path}")
-def get_docs_file(file_path: str):
-    """Serve raw markdown documentation files"""
-    import os
-    from pathlib import Path
-    
-    # Security: prevent path traversal
-    if '..' in file_path or file_path.startswith('/'):
-        raise HTTPException(400, "Invalid file path")
-    
-    # Construct file path
-    docs_dir = Path(__file__).parent.parent.parent / "docs"
-    file_path_obj = docs_dir / file_path
-    
-    # Ensure file is within docs directory
-    try:
-        file_path_obj.resolve().relative_to(docs_dir.resolve())
-    except ValueError:
-        raise HTTPException(400, "Invalid file path")
-    
-    # Check if file exists
-    if not file_path_obj.exists() or not file_path_obj.is_file():
-        raise HTTPException(404, "File not found")
+    if not file_path_obj or not file_path_obj.exists() or not file_path_obj.is_file():
+        # Log available files for debugging
+        available_dirs = [str(d) for d in possible_docs_dirs if d.exists()]
+        logger.warning("docs_file_not_found", 
+                      requested_path=file_path,
+                      available_docs_dirs=available_dirs,
+                      docs_dir_used=str(docs_dir_used) if docs_dir_used else None)
+        raise HTTPException(404, f"File not found: {file_path}")
     
     # Read and return file
     try:
@@ -1947,7 +2005,7 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
 @app.get("/api/v1/findings")
 def list_all_findings(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db),
     severity: str | None = None,
     category: str | None = None,
@@ -2028,7 +2086,7 @@ def list_all_findings(
     }
 
 @app.get("/api/v1/scans/{scan_id}/findings/export")
-def export_findings(scan_id: str, request: Request, api_key=Depends(require_api_key), db: Session = Depends(get_db), format: str = "csv"):
+def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db), format: str = "csv"):
     """Export findings for a scan as CSV or JSON"""
     # Require tenant context
     tenant_id = require_tenant(request, db)
@@ -2124,10 +2182,17 @@ def ui_scan_detail(scan_id: str, request: Request):
             {"label": f"Scan {scan_id[:8]}...", "url": f"/scan/{scan_id}"}
         ]
         
+        # Get tenant info for display
+        tenant = None
+        if tenant_id:
+            tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        
         return templates.TemplateResponse(
             "scan_detail.html",
             {
-                "request": request, 
+                "request": request,
+                "user": user,
+                "tenant": tenant,
                 "scan": scan, 
                 "findings": findings,
                 "existing_baseline": existing_baseline,
@@ -2204,16 +2269,23 @@ async def stream_scan_status(scan_id: str, request: Request):
     )
 
 @app.get("/api/v1/scans/{scan_id}/status")
-def get_scan_status(scan_id: str, db: Session = Depends(get_db)):
+def get_scan_status(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
     """Get current scan status (REST endpoint for polling)"""
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    # Require tenant context
+    tenant_id = require_tenant(request, db)
+    
+    # Filter by tenant
+    q_scan = db.query(Scan).filter(Scan.id == scan_id)
+    q_scan = filter_by_tenant(q_scan, Scan, tenant_id)
+    scan = q_scan.first()
+    
     if not scan:
         raise HTTPException(404, "Scan not found")
     
     return {
         "scan_id": scan_id,
         "status": scan.scan_status,
-        "passed": bool(scan.passed),
+        "result": "PASS" if scan.passed else "FAIL", # Harmonized result
         "total_findings": scan.total_findings or 0,
         "critical_count": scan.critical_count or 0,
         "high_count": scan.high_count or 0,
@@ -2554,7 +2626,7 @@ def logout_user(request: Request, db: Session = Depends(get_db)):
 @app.get("/api/v1/users")
 def list_users(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db),
     tenant_id: str | None = None,
     active_only: bool = True
@@ -2564,7 +2636,7 @@ def list_users(
     Filters by tenant_id if provided, otherwise uses request tenant context.
     """
     # RBAC: require user.read permission
-    if not check_permission(api_key, "user.read"):
+    if not check_permission(user_or_key, "user.read"):
         raise HTTPException(403, "Permission denied: user.read required")
     
     # Get tenant_id
@@ -2572,8 +2644,8 @@ def list_users(
         tenant_id = require_tenant(request, db)
     
     # Validate tenant access
-    user_tenant_id = getattr(api_key, "tenant_id", None)
-    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+    user_tenant_id = getattr(user_or_key, "tenant_id", None)
+    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(user_or_key, "role", None)):
         raise HTTPException(403, "Access denied to this tenant")
     
     # Query users
@@ -2604,14 +2676,14 @@ def create_user_endpoint(
     name: str = Form(...),
     role: str = Form("viewer"),
     tenant_id: str = Form(None),
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
     Create a new user. Requires admin role.
     """
     # RBAC: require user.read permission
-    if not check_permission(api_key, "user.read"):
+    if not check_permission(user_or_key, "user.read"):
         raise HTTPException(403, "Permission denied: user.read required")
     
     # Get tenant_id
@@ -2619,8 +2691,8 @@ def create_user_endpoint(
         tenant_id = require_tenant(request, db)
     
     # Validate tenant access
-    user_tenant_id = getattr(api_key, "tenant_id", None)
-    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(api_key, "role", None)):
+    user_tenant_id = getattr(user_or_key, "tenant_id", None)
+    if not validate_tenant_access(tenant_id, user_tenant_id, getattr(user_or_key, "role", None)):
         raise HTTPException(403, "Access denied to this tenant")
     
     try:
@@ -2664,7 +2736,7 @@ def update_user_endpoint(
     name: str = Form(None),
     role: str = Form(None),
     password: str = Form(None),
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
@@ -2734,7 +2806,7 @@ def update_user_endpoint(
 def deactivate_user_endpoint(
     user_id: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
@@ -2756,7 +2828,7 @@ def deactivate_user_endpoint(
         raise HTTPException(403, "Access denied to this user")
     
     # Prevent deactivating yourself
-    if hasattr(api_key, 'user_id') and api_key.user_id == user_id:
+    if hasattr(user_or_key, 'user_id') and user_or_key.user_id == user_id:
         raise HTTPException(400, "Cannot deactivate your own account")
     
     user = deactivate_user(db, user)
@@ -2781,7 +2853,7 @@ def deactivate_user_endpoint(
 def activate_user_endpoint(
     user_id: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
@@ -2809,7 +2881,7 @@ def activate_user_endpoint(
         event_type="user_activated",
         success=True,
         user_id=user.id,
-        activated_by=getattr(api_key, "id", None)
+        activated_by=getattr(user_or_key, "id", None)
     )
     
     return {
@@ -2823,7 +2895,7 @@ def activate_user_endpoint(
 @app.get("/api/v1/tenants")
 def list_tenants(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db),
     active_only: bool = False
 ):
@@ -2831,7 +2903,7 @@ def list_tenants(
     List all tenants. Requires super_admin role.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     # Query tenants
@@ -2858,14 +2930,14 @@ def create_tenant(
     request: Request,
     name: str = Form(...),
     settings: str = Form(None),  # JSON string
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
     Create a new tenant. Requires super_admin role.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     # Check if tenant name already exists
@@ -2920,14 +2992,14 @@ def create_tenant(
 def get_tenant(
     tenant_id: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
     Get tenant details. Requires super_admin role.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -2960,14 +3032,14 @@ def update_tenant(
     name: str = Form(None),
     is_active: bool = Form(None),
     settings: str = Form(None),  # JSON string
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
     Update a tenant. Requires super_admin role.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -3028,7 +3100,7 @@ def update_tenant(
 def deactivate_tenant(
     tenant_id: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
@@ -3036,7 +3108,7 @@ def deactivate_tenant(
     This will also deactivate all users in the tenant.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -3082,14 +3154,14 @@ def deactivate_tenant(
 def activate_tenant(
     tenant_id: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """
     Activate a tenant. Requires super_admin role.
     """
     # RBAC: require super_admin role
-    if not check_role(api_key, "super_admin"):
+    if not check_role(user_or_key, "super_admin"):
         raise HTTPException(403, "Super admin access required")
     
     tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
@@ -3105,13 +3177,13 @@ def activate_tenant(
         event_type="tenant_activated",
         success=True,
         tenant_id=tenant.id,
-        activated_by=getattr(api_key, "id", None)
+        activated_by=getattr(user_or_key, "id", None)
     )
     
     logger.info(
         "tenant_activated",
         tenant_id=tenant.id,
-        activated_by=getattr(api_key, "id", None)
+        activated_by=getattr(user_or_key, "id", None)
     )
     
     return {
@@ -3127,7 +3199,7 @@ def get_analytics_trends(
     request: Request,
     days: int = 30,
     group_by: str = "day",
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get trend analysis for findings over time"""
@@ -3146,7 +3218,7 @@ def get_analytics_trends(
 def get_analytics_severity_distribution(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get severity distribution of findings"""
@@ -3165,7 +3237,7 @@ def get_analytics_severity_distribution(
 def get_analytics_scanner_effectiveness(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get scanner effectiveness metrics"""
@@ -3184,7 +3256,7 @@ def get_analytics_scanner_effectiveness(
 def get_analytics_remediation_progress(
     request: Request,
     days: int = 90,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get remediation progress tracking"""
@@ -3203,7 +3275,7 @@ def get_analytics_remediation_progress(
 def get_analytics_risk_scores(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get risk scores and prioritization"""
@@ -3228,7 +3300,7 @@ def export_analytics(
     include_scanner: bool = True,
     include_remediation: bool = True,
     include_risk: bool = True,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Export analytics data in CSV, JSON, or PDF format"""
@@ -3336,7 +3408,7 @@ def export_analytics(
 @app.get("/api/v1/tenant-settings")
 def get_tenant_settings_endpoint(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get all settings for the current tenant"""
@@ -3352,7 +3424,7 @@ def get_tenant_settings_endpoint(
 def get_tenant_setting_endpoint(
     setting_key: str,
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get a specific setting for the current tenant"""
@@ -3369,14 +3441,14 @@ def update_tenant_setting_endpoint(
     setting_key: str,
     request: Request,
     setting_value: dict = Body(...),
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Update a specific setting for the current tenant"""
     tenant_id = require_tenant(request, db)
     
     # Check permission (tenant admin required)
-    if not check_permission(api_key, "tenant_settings.update"):
+    if not check_permission(user_or_key, "tenant_settings.update"):
         raise HTTPException(403, "Permission denied: tenant_settings.update required")
     
     from sentrascan.core.tenant_settings import set_tenant_setting
@@ -3384,10 +3456,10 @@ def update_tenant_setting_endpoint(
     
     # Get user ID for audit logging
     user_id = None
-    if isinstance(api_key, User):
-        user_id = api_key.id
-    elif hasattr(api_key, "user_id"):
-        user_id = api_key.user_id
+    if isinstance(user_or_key, User):
+        user_id = user_or_key.id
+    elif hasattr(user_or_key, "user_id"):
+        user_id = user_or_key.user_id
     
     set_tenant_setting(db, tenant_id, setting_key, setting_value, user_id=user_id)
     
@@ -3398,7 +3470,7 @@ def update_tenant_setting_endpoint(
 def update_tenant_settings_endpoint(
     request: Request,
     settings: dict = Body(...),
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Update multiple settings for the current tenant"""
@@ -3426,7 +3498,7 @@ def update_tenant_settings_endpoint(
 @app.post("/api/v1/tenant-settings/reset")
 def reset_tenant_settings_endpoint(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Reset all settings to defaults for the current tenant"""
@@ -3454,7 +3526,7 @@ def reset_tenant_settings_endpoint(
 @app.get("/api/v1/ml-insights/status")
 def get_ml_insights_status(
     request: Request,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get ML insights feature status"""
@@ -3470,7 +3542,7 @@ def get_ml_insights_status(
 def get_ml_insights(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get ML insights (anomaly detection, correlations, remediation prioritization)"""
@@ -3505,7 +3577,7 @@ def get_ml_insights(
 def get_ml_anomalies(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get anomaly detection results"""
@@ -3527,7 +3599,7 @@ def get_ml_anomalies(
 def get_ml_correlations(
     request: Request,
     days: int = 30,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get finding correlation analysis"""
@@ -3549,7 +3621,7 @@ def get_ml_correlations(
 def get_ml_remediations(
     request: Request,
     days: int = 90,
-    api_key=Depends(require_api_key),
+    user_or_key=Depends(require_auth),
     db: Session = Depends(get_db)
 ):
     """Get prioritized remediation recommendations"""

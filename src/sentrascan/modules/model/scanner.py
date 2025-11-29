@@ -182,138 +182,139 @@ class ModelScanner:
             
             sev_counts = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0, "info_count": 0}
             issue_types = []
-        # Persist SBOM if generated
-        if sbom_path and os.path.exists(sbom_path):
+            
+            # Persist SBOM if generated
+            if sbom_path and os.path.exists(sbom_path):
+                try:
+                    with open(sbom_path, "r") as f:
+                        sbom_json = json.load(f)
+                    from sentrascan.core.models import SBOM as SBOMModel
+                    sb = SBOMModel(
+                        model_name=report.get("model_name") if isinstance(report, dict) else None,
+                        model_version=str(report.get("model_version")) if isinstance(report, dict) and report.get("model_version") is not None else None,
+                        bom_format=sbom_json.get("bomFormat"),
+                        spec_version=sbom_json.get("specVersion"),
+                        content=sbom_json,
+                        hash=None,
+                        tenant_id=tenant_id,
+                    )
+                    db.add(sb)
+                    db.flush()
+                    scan.sbom_id = sb.id
+                except Exception:
+                    pass
+            
+            # Process findings - modelaudit returns issues with "message" as string, not dict
+            findings_processed = 0
+            for iss in findings:
+                try:
+                    severity = (iss.get("severity") or iss.get("level") or "info").upper()
+                    # Severity mapping: critical→critical, warning→medium, info→info (no change)
+                    if severity == "WARNING":
+                        severity = "MEDIUM"
+                    # Keep "CRITICAL" and "INFO" as-is
+                    
+                    cat = iss.get("type") or iss.get("category") or iss.get("ruleId") or "unknown"
+                    issue_types.append(cat)
+                    key = (severity.lower() + "_count")
+                    if key in sev_counts:
+                        sev_counts[key] += 1
+                    
+                    # Extract title - message can be string or dict
+                    title = iss.get("title")
+                    if not title:
+                        msg = iss.get("message")
+                        if isinstance(msg, dict):
+                            title = msg.get("text", "Issue")
+                        elif isinstance(msg, str):
+                            title = msg
+                        else:
+                            title = "Issue"
+                    
+                    # Extract description from details if available
+                    description = iss.get("description") or ""
+                    if not description and iss.get("details"):
+                        details = iss.get("details")
+                        if isinstance(details, dict):
+                            description = details.get("vulnerability_description") or details.get("why") or ""
+                    
+                    # Extract remediation from details
+                    remediation = iss.get("remediation") or ""
+                    if not remediation and iss.get("details"):
+                        details = iss.get("details")
+                        if isinstance(details, dict):
+                            remediation = details.get("recommendation") or ""
+                    
+                    # Limit field lengths to avoid database errors
+                    title_str = (title[:500] if title else "Issue")
+                    description_str = (description[:2000] if description else "")
+                    location_str = (iss.get("location") or "")[:500] if iss.get("location") else None
+                    remediation_str = (remediation[:1000] if remediation else "")
+                    
+                    f = Finding(
+                        scan_id=scan.id,
+                        module="model",
+                        scanner="modelaudit",
+                        severity=severity,  # Keep original severity (CRITICAL, MEDIUM, INFO)
+                        category=cat[:100] if cat else "unknown",  # Limit category length
+                        title=title_str,
+                        description=description_str,
+                        location=location_str,
+                        evidence=iss.get("details") or iss.get("evidence") or {},
+                        remediation=remediation_str,
+                        tenant_id=tenant_id,
+                    )
+                    db.add(f)
+                    findings_processed += 1
+                except Exception as e:
+                    # Log error but continue processing other findings
+                    import structlog
+                    logger = structlog.get_logger()
+                    logger.warning("finding_creation_error", error=str(e), issue_keys=list(iss.keys()) if isinstance(iss, dict) else [])
+                    continue
+            
+            # Flush findings before updating scan counts to ensure they're in the session
             try:
-                with open(sbom_path, "r") as f:
-                    sbom_json = json.load(f)
-                from sentrascan.core.models import SBOM as SBOMModel
-                sb = SBOMModel(
-                    model_name=report.get("model_name") if isinstance(report, dict) else None,
-                    model_version=str(report.get("model_version")) if isinstance(report, dict) and report.get("model_version") is not None else None,
-                    bom_format=sbom_json.get("bomFormat"),
-                    spec_version=sbom_json.get("specVersion"),
-                    content=sbom_json,
-                    hash=None,
-                    tenant_id=tenant_id,
-                )
-                db.add(sb)
                 db.flush()
-                scan.sbom_id = sb.id
-            except Exception:
-                pass
-        
-        # Process findings - modelaudit returns issues with "message" as string, not dict
-        findings_processed = 0
-        for iss in findings:
-            try:
-                severity = (iss.get("severity") or iss.get("level") or "info").upper()
-                # Severity mapping: critical→critical, warning→medium, info→info (no change)
-                if severity == "WARNING":
-                    severity = "MEDIUM"
-                # Keep "CRITICAL" and "INFO" as-is
-                
-                cat = iss.get("type") or iss.get("category") or iss.get("ruleId") or "unknown"
-                issue_types.append(cat)
-                key = (severity.lower() + "_count")
-                if key in sev_counts:
-                    sev_counts[key] += 1
-                
-                # Extract title - message can be string or dict
-                title = iss.get("title")
-                if not title:
-                    msg = iss.get("message")
-                    if isinstance(msg, dict):
-                        title = msg.get("text", "Issue")
-                    elif isinstance(msg, str):
-                        title = msg
-                    else:
-                        title = "Issue"
-                
-                # Extract description from details if available
-                description = iss.get("description") or ""
-                if not description and iss.get("details"):
-                    details = iss.get("details")
-                    if isinstance(details, dict):
-                        description = details.get("vulnerability_description") or details.get("why") or ""
-                
-                # Extract remediation from details
-                remediation = iss.get("remediation") or ""
-                if not remediation and iss.get("details"):
-                    details = iss.get("details")
-                    if isinstance(details, dict):
-                        remediation = details.get("recommendation") or ""
-                
-                # Limit field lengths to avoid database errors
-                title_str = (title[:500] if title else "Issue")
-                description_str = (description[:2000] if description else "")
-                location_str = (iss.get("location") or "")[:500] if iss.get("location") else None
-                remediation_str = (remediation[:1000] if remediation else "")
-                
-                f = Finding(
-                    scan_id=scan.id,
-                    module="model",
-                    scanner="modelaudit",
-                    severity=severity,  # Keep original severity (CRITICAL, MEDIUM, INFO)
-                    category=cat[:100] if cat else "unknown",  # Limit category length
-                    title=title_str,
-                    description=description_str,
-                    location=location_str,
-                    evidence=iss.get("details") or iss.get("evidence") or {},
-                    remediation=remediation_str,
-                    tenant_id=tenant_id,
-                )
-                db.add(f)
-                findings_processed += 1
             except Exception as e:
-                # Log error but continue processing other findings
                 import structlog
                 logger = structlog.get_logger()
-                logger.warning("finding_creation_error", error=str(e), issue_keys=list(iss.keys()) if isinstance(iss, dict) else [])
-                continue
-        
-        # Flush findings before updating scan counts to ensure they're in the session
-        try:
-            db.flush()
-        except Exception as e:
+                logger.error("model_scan_flush_failed", scan_id=scan.id, error=str(e), findings_processed=findings_processed)
+                db.rollback()
+                raise
+            
+            scan.duration_ms = int((time.time() - start) * 1000)
+            # Calculate total excluding info (for backward compatibility with Scan model)
+            scan.total_findings = (sev_counts["critical_count"] + sev_counts["high_count"] + 
+                                   sev_counts["medium_count"] + sev_counts["low_count"])
+            scan.critical_count = sev_counts["critical_count"]
+            scan.high_count = sev_counts["high_count"]
+            scan.medium_count = sev_counts["medium_count"]
+            scan.low_count = sev_counts["low_count"]
+            # Note: info_count is tracked in findings but not in Scan model (for backward compatibility)
+            
+            # Set scan result: Pass or Fail based on policy gate
+            scan.passed = self.policy.gate(sev_counts, issue_types)
+            
+            # Set scan status: completed (scan finished successfully)
+            scan.scan_status = "completed"
+            
+            # Log findings processing summary
             import structlog
             logger = structlog.get_logger()
-            logger.error("model_scan_flush_failed", scan_id=scan.id, error=str(e), findings_processed=findings_processed)
-            db.rollback()
-            raise
-        
-        scan.duration_ms = int((time.time() - start) * 1000)
-        # Calculate total excluding info (for backward compatibility with Scan model)
-        scan.total_findings = (sev_counts["critical_count"] + sev_counts["high_count"] + 
-                               sev_counts["medium_count"] + sev_counts["low_count"])
-        scan.critical_count = sev_counts["critical_count"]
-        scan.high_count = sev_counts["high_count"]
-        scan.medium_count = sev_counts["medium_count"]
-        scan.low_count = sev_counts["low_count"]
-        # Note: info_count is tracked in findings but not in Scan model (for backward compatibility)
-        
-        # Set scan result: Pass or Fail based on policy gate
-        scan.passed = self.policy.gate(sev_counts, issue_types)
-        
-        # Set scan status: completed (scan finished successfully)
-        scan.scan_status = "completed"
-        
-        # Log findings processing summary
-        import structlog
-        logger = structlog.get_logger()
-        logger.info(
-            "model_scan_findings_processed",
-            scan_id=scan.id,
-            findings_processed=findings_processed,
-            total_findings=scan.total_findings,
-            critical=scan.critical_count,
-            high=scan.high_count,
-            medium=scan.medium_count,
-            low=scan.low_count,
-            info=sev_counts.get("info_count", 0),
-            passed=scan.passed,
-        )
-        
+            logger.info(
+                "model_scan_findings_processed",
+                scan_id=scan.id,
+                findings_processed=findings_processed,
+                total_findings=scan.total_findings,
+                critical=scan.critical_count,
+                high=scan.high_count,
+                medium=scan.medium_count,
+                low=scan.low_count,
+                info=sev_counts.get("info_count", 0),
+                passed=scan.passed,
+            )
+            
             # Commit the transaction
             try:
                 db.commit()

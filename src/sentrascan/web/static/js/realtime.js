@@ -104,7 +104,9 @@
 
     const poll = async function() {
       try {
-        const response = await fetch(`/api/v1/scans/${scanId}/status`);
+        const response = await fetch(`/api/v1/scans/${scanId}/status`, {
+          credentials: 'include'
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch scan status');
         }

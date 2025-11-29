@@ -139,223 +139,223 @@ class MCPScanner:
 
             # Try mcp-checkpoint (JSON to temp file)
             try:
-            import tempfile
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-            tmp_path = tmp.name
-            tmp.close()
-            args = ["mcp-checkpoint", "scan", "--report-type", "json", "--output", tmp_path]
-            for p in (config_paths or []):
-                args += ["--config", p]
-            subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-            try:
-                with open(tmp_path, "r") as f:
-                    data = json.load(f)
-            except Exception:
-                data = {"findings": []}
-            try:
-                os.unlink(tmp_path)
-            except Exception:
-                pass
-            for iss in data.get("findings", []):
-                severity = (iss.get("severity") or "HIGH").upper()
-                key = severity.lower() + "_count"
-                if key in sev:
-                    sev[key] += 1
-                issue_types.append(iss.get("type") or "mcp_issue")
-                f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
-                db.add(f)
-                cp_ok = True
+                import tempfile
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                tmp_path = tmp.name
+                tmp.close()
+                args = ["mcp-checkpoint", "scan", "--report-type", "json", "--output", tmp_path]
+                for p in (config_paths or []):
+                    args += ["--config", p]
+                subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                try:
+                    with open(tmp_path, "r") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {"findings": []}
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                for iss in data.get("findings", []):
+                    severity = (iss.get("severity") or "HIGH").upper()
+                    key = severity.lower() + "_count"
+                    if key in sev:
+                        sev[key] += 1
+                    issue_types.append(iss.get("type") or "mcp_issue")
+                    f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
+                    db.add(f)
+                    cp_ok = True
             except Exception:
                 pass
             # Try Cisco YARA-only (raw JSON to stdout)
             try:
-            if config_paths:
-                combined = {"findings": []}
-                for p in config_paths:
-                    args = ["mcp-scanner", "--config-path", p, "--analyzers", "yara", "--format", "raw"]
+                if config_paths:
+                    combined = {"findings": []}
+                    for p in config_paths:
+                        args = ["mcp-scanner", "--config-path", p, "--analyzers", "yara", "--format", "raw"]
+                        out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                        payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
+                        # Normalize payload to expected structure
+                        if isinstance(payload, dict) and "findings" in payload:
+                            pass
+                        else:
+                            payload = {"findings": payload if isinstance(payload, list) else []}
+                        combined["findings"].extend(payload["findings"])
+                    data = combined
+                else:
+                    args = ["mcp-scanner", "--scan-known-configs", "--analyzers", "yara", "--format", "raw"]
                     out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
                     payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
-                    # Normalize payload to expected structure
                     if isinstance(payload, dict) and "findings" in payload:
-                        pass
+                        data = payload
                     else:
-                        payload = {"findings": payload if isinstance(payload, list) else []}
-                    combined["findings"].extend(payload["findings"])
-                data = combined
-            else:
-                args = ["mcp-scanner", "--scan-known-configs", "--analyzers", "yara", "--format", "raw"]
-                out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-                payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
-                if isinstance(payload, dict) and "findings" in payload:
-                    data = payload
-                else:
-                    data = {"findings": payload if isinstance(payload, list) else []}
-            for iss in data.get("findings", []):
-                severity = (iss.get("severity") or "HIGH").upper()
-                key = severity.lower() + "_count"
-                if key in sev:
-                    sev[key] += 1
-                issue_types.append(iss.get("type") or "mcp_issue")
-                f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
-                db.add(f)
+                        data = {"findings": payload if isinstance(payload, list) else []}
+                for iss in data.get("findings", []):
+                    severity = (iss.get("severity") or "HIGH").upper()
+                    key = severity.lower() + "_count"
+                    if key in sev:
+                        sev[key] += 1
+                    issue_types.append(iss.get("type") or "mcp_issue")
+                    f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
+                    db.add(f)
             except Exception:
                 pass
 
             # Run regex rules on repo(s)
             try:
-            rs = RuleScanner()
-            for rp in repo_paths:
-                for rfind in rs.scan_repo(rp):
-                    sev_key = (rfind["severity"].lower() + "_count")
-                    if sev_key in sev:
-                        sev[sev_key] += 1
-                    issue_types.append("code_rule")
-                    db.add(Finding(
-                        scan_id=scan.id,
-                        module="mcp",
-                        scanner=rfind.get("engine"),
-                        severity=rfind.get("severity"),
-                        category=rfind.get("category"),
-                        title=rfind.get("title"),
-                        description=rfind.get("description"),
-                        location=rfind.get("location"),
-                        evidence={"rule_id": rfind.get("rule_id")},
-                        remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
-                        tenant_id=tenant_id,
-                    ))
+                rs = RuleScanner()
+                for rp in repo_paths:
+                    for rfind in rs.scan_repo(rp):
+                        sev_key = (rfind["severity"].lower() + "_count")
+                        if sev_key in sev:
+                            sev[sev_key] += 1
+                        issue_types.append("code_rule")
+                        db.add(Finding(
+                            scan_id=scan.id,
+                            module="mcp",
+                            scanner=rfind.get("engine"),
+                            severity=rfind.get("severity"),
+                            category=rfind.get("category"),
+                            title=rfind.get("title"),
+                            description=rfind.get("description"),
+                            location=rfind.get("location"),
+                            evidence={"rule_id": rfind.get("rule_id")},
+                            remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
+                            tenant_id=tenant_id,
+                        ))
             except Exception:
                 pass
 
             # Run SAST (Semgrep) if available
             try:
-            srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
-            if srunner.available():
-                for rp in repo_paths:
-                    for sf in srunner.run(rp, include_globs=["**/*.py"]):
-                        sev_key = (sf["severity"].lower() + "_count")
-                        if sev_key in sev:
-                            sev[sev_key] += 1
-                        issue_types.append("semgrep")
-                        db.add(Finding(
-                            scan_id=scan.id,
-                            module="mcp",
-                            scanner="semgrep",
-                            severity=sf.get("severity"),
-                            category="SAST",
-                            title=sf.get("message"),
-                            description=sf.get("rule_id"),
-                            location=f"{sf.get('path')}:{sf.get('line')}",
-                            evidence={"rule_id": sf.get("rule_id")},
-                            remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
-                            tenant_id=tenant_id,
-                        ))
-            except Exception:
-                pass
-
-            # Handshake-like probe (static parsing of Tool defs)
-            try:
-            for rp in repo_paths:
-                probe = MCPProbe(rp)
-                tools = probe.enumerate_tools()
-                for pf in probe.risk_assessment(tools):
-                    sev_key = (pf["severity"].lower() + "_count")
-                    if sev_key in sev:
-                        sev[sev_key] += 1
-                    issue_types.append("mcp_probe")
-                    db.add(Finding(
-                        scan_id=scan.id,
-                        module="mcp",
-                        scanner=pf.get("engine"),
-                        severity=pf.get("severity"),
-                        category=pf.get("category"),
-                        title=pf.get("title"),
-                        description=pf.get("description"),
-                        location=pf.get("location"),
-                        evidence={},
-                        remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
-                        tenant_id=tenant_id,
-                    ))
-            except Exception:
-                pass
-
-            # Dynamic safe-run probe (best-effort)
-            try:
-            for p in (config_paths or []):
-                with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                    cfg = json.load(fh)
-                for name, s in (cfg.get("mcpServers") or {}).items():
-                    cmd = s.get("command")
-                    args = s.get("args") or []
-                    env = s.get("env") or {}
-                    if cmd:
-                        rp = None
-                        for i, a in enumerate(args):
-                            if a == "--directory" and i + 1 < len(args):
-                                rp = args[i+1]
-                                break
-                        rtp = RuntimeProbe(cmd=cmd, args=args, env=env, cwd=rp or None, timeout=8)
-                        for rf in rtp.run():
-                            sev_key = (rf["severity"].lower() + "_count")
+                srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
+                if srunner.available():
+                    for rp in repo_paths:
+                        for sf in srunner.run(rp, include_globs=["**/*.py"]):
+                            sev_key = (sf["severity"].lower() + "_count")
                             if sev_key in sev:
                                 sev[sev_key] += 1
-                            issue_types.append("mcp_runtime")
+                            issue_types.append("semgrep")
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
-                                scanner=rf.get("engine"),
-                                severity=rf.get("severity"),
-                                category=rf.get("category"),
-                                title=rf.get("title"),
-                                description=rf.get("description"),
-                                location=rp,
-                                evidence={},
-                                remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
+                                scanner="semgrep",
+                                severity=sf.get("severity"),
+                                category="SAST",
+                                title=sf.get("message"),
+                                description=sf.get("rule_id"),
+                                location=f"{sf.get('path')}:{sf.get('line')}",
+                                evidence={"rule_id": sf.get("rule_id")},
+                                remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
                                 tenant_id=tenant_id,
                             ))
             except Exception:
                 pass
 
+            # Handshake-like probe (static parsing of Tool defs)
+            try:
+                for rp in repo_paths:
+                    probe = MCPProbe(rp)
+                    tools = probe.enumerate_tools()
+                    for pf in probe.risk_assessment(tools):
+                        sev_key = (pf["severity"].lower() + "_count")
+                        if sev_key in sev:
+                            sev[sev_key] += 1
+                        issue_types.append("mcp_probe")
+                        db.add(Finding(
+                            scan_id=scan.id,
+                            module="mcp",
+                            scanner=pf.get("engine"),
+                            severity=pf.get("severity"),
+                            category=pf.get("category"),
+                            title=pf.get("title"),
+                            description=pf.get("description"),
+                            location=pf.get("location"),
+                            evidence={},
+                            remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
+                            tenant_id=tenant_id,
+                        ))
+            except Exception:
+                pass
+
+            # Dynamic safe-run probe (best-effort)
+            try:
+                for p in (config_paths or []):
+                    with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                        cfg = json.load(fh)
+                    for name, s in (cfg.get("mcpServers") or {}).items():
+                        cmd = s.get("command")
+                        args = s.get("args") or []
+                        env = s.get("env") or {}
+                        if cmd:
+                            rp = None
+                            for i, a in enumerate(args):
+                                if a == "--directory" and i + 1 < len(args):
+                                    rp = args[i+1]
+                                    break
+                            rtp = RuntimeProbe(cmd=cmd, args=args, env=env, cwd=rp or None, timeout=8)
+                            for rf in rtp.run():
+                                sev_key = (rf["severity"].lower() + "_count")
+                                if sev_key in sev:
+                                    sev[sev_key] += 1
+                                issue_types.append("mcp_runtime")
+                                db.add(Finding(
+                                    scan_id=scan.id,
+                                    module="mcp",
+                                    scanner=rf.get("engine"),
+                                    severity=rf.get("severity"),
+                                    category=rf.get("category"),
+                                    title=rf.get("title"),
+                                    description=rf.get("description"),
+                                    location=rp,
+                                    evidence={},
+                                    remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
+                                    tenant_id=tenant_id,
+                                ))
+            except Exception:
+                pass
+
             # Secrets scanners
             try:
-            th = TruffleHogRunner()
-            gl = GitleaksRunner()
-            for rp in repo_paths:
-                if th.available():
-                    for s in th.run(rp):
-                        sev_key = (s["severity"].lower() + "_count")
-                        if sev_key in sev:
-                            sev[sev_key] += 1
-                        issue_types.append("secrets")
-                        db.add(Finding(
-                            scan_id=scan.id,
-                            module="mcp",
-                            scanner=s.get("engine"),
-                            severity=s.get("severity"),
-                            category="Secrets",
-                            title=s.get("title"),
-                            description=s.get("description"),
-                            location=s.get("location"),
-                            evidence=s.get("evidence"),
-                            tenant_id=tenant_id,
-                        ))
-                if gl.available():
-                    for s in gl.run(rp):
-                        sev_key = (s["severity"].lower() + "_count")
-                        if sev_key in sev:
-                            sev[sev_key] += 1
-                        issue_types.append("secrets")
-                        db.add(Finding(
-                            scan_id=scan.id,
-                            module="mcp",
-                            scanner=s.get("engine"),
-                            severity=s.get("severity"),
-                            category="Secrets",
-                            title=s.get("title"),
-                            description=s.get("description"),
-                            location=s.get("location"),
-                            evidence=s.get("evidence"),
-                            tenant_id=tenant_id,
-                        ))
+                th = TruffleHogRunner()
+                gl = GitleaksRunner()
+                for rp in repo_paths:
+                    if th.available():
+                        for s in th.run(rp):
+                            sev_key = (s["severity"].lower() + "_count")
+                            if sev_key in sev:
+                                sev[sev_key] += 1
+                            issue_types.append("secrets")
+                            db.add(Finding(
+                                scan_id=scan.id,
+                                module="mcp",
+                                scanner=s.get("engine"),
+                                severity=s.get("severity"),
+                                category="Secrets",
+                                title=s.get("title"),
+                                description=s.get("description"),
+                                location=s.get("location"),
+                                evidence=s.get("evidence"),
+                                tenant_id=tenant_id,
+                            ))
+                    if gl.available():
+                        for s in gl.run(rp):
+                            sev_key = (s["severity"].lower() + "_count")
+                            if sev_key in sev:
+                                sev[sev_key] += 1
+                            issue_types.append("secrets")
+                            db.add(Finding(
+                                scan_id=scan.id,
+                                module="mcp",
+                                scanner=s.get("engine"),
+                                severity=s.get("severity"),
+                                category="Secrets",
+                                title=s.get("title"),
+                                description=s.get("description"),
+                                location=s.get("location"),
+                                evidence=s.get("evidence"),
+                                tenant_id=tenant_id,
+                            ))
             except Exception:
                 pass
 

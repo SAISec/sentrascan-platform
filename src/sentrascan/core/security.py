@@ -140,13 +140,14 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         
         # Content Security Policy
         # Allow trusted CDNs for Chart.js, marked, Prism.js
+        # Allow source map connections for debugging
         csp = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
             "img-src 'self' data:; "
             "font-src 'self' https://cdn.jsdelivr.net; "
-            "connect-src 'self'; "
+            "connect-src 'self' https://cdn.jsdelivr.net; "
             "frame-ancestors 'none';"
         )
         response.headers["Content-Security-Policy"] = csp
