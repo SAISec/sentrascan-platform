@@ -84,7 +84,9 @@ class Scan(Base):
     target_path = Column(String, nullable=False)
     target_format = Column(String)
     target_hash = Column(String)
-    scan_status = Column(String, default="completed")
+    # Scan status: waiting_to_start, in_progress, completed, aborted, failed
+    scan_status = Column(String, default="waiting_to_start")
+    # Scan result: True = Pass, False = Fail (based on policy gate evaluation)
     passed = Column(Boolean, default=False)
     duration_ms = Column(Integer, default=0)
     total_findings = Column(Integer, default=0)

@@ -90,48 +90,55 @@ class MCPScanner:
 
     def scan(self, config_paths: List[str], auto_discover: bool, timeout: int, db, tenant_id: Optional[str] = None):
         start = time.time()
-        if auto_discover:
-            config_paths = list(dict.fromkeys((config_paths or []) + self.auto_discover()))
-        scan = Scan(scan_type="mcp", target_path=",".join(config_paths or ["auto"]), tenant_id=tenant_id)
-        db.add(scan)
-        db.flush()
-        sev = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0}
-        issue_types: List[str] = []
-
-        # Heuristic: derive repo paths from config json (look for --directory or absolute paths)
-        repo_paths: List[str] = []
+        scan = None
         try:
-            for p in (config_paths or []):
-                # If a config path is actually a repo URL, clone it
-                if isinstance(p, str) and (p.endswith('.git') or p.startswith('git@') or p.startswith('https://github.com') or 'huggingface.co' in p):
-                    rp = self._ensure_repo(p)
-                    if rp:
-                        repo_paths.append(rp)
-                    continue
-                # Otherwise treat as JSON config
-                with open(p, "r", encoding="utf-8", errors="ignore") as fh:
-                    cfg = json.load(fh)
-                servers = (cfg or {}).get("mcpServers") or {}
-                for name, s in servers.items():
-                    args = s.get("args") or []
-                    for i, a in enumerate(args):
-                        if a == "--directory" and i + 1 < len(args):
-                            rp = args[i+1]
-                            # If this path doesn't exist but looks like URL, clone
-                            if not os.path.isdir(rp) and (rp.endswith('.git') or rp.startswith('git@') or rp.startswith('https://github.com') or 'huggingface.co' in rp):
-                                rp2 = self._ensure_repo(rp)
-                                if rp2:
-                                    repo_paths.append(rp2)
-                            elif os.path.isdir(rp):
-                                repo_paths.append(rp)
-                        elif isinstance(a, str) and a.startswith("/") and os.path.isdir(a):
-                            repo_paths.append(a)
-        except Exception:
-            pass
-        repo_paths = [rp for rp in repo_paths if os.path.isdir(rp)]
+            if auto_discover:
+                config_paths = list(dict.fromkeys((config_paths or []) + self.auto_discover()))
+            scan = Scan(
+                scan_type="mcp", 
+                target_path=",".join(config_paths or ["auto"]), 
+                scan_status="in_progress",  # Scan is actively running
+                tenant_id=tenant_id
+            )
+            db.add(scan)
+            db.flush()
+            sev = {"critical_count": 0, "high_count": 0, "medium_count": 0, "low_count": 0}
+            issue_types: List[str] = []
 
-        # Try mcp-checkpoint (JSON to temp file)
-        try:
+            # Heuristic: derive repo paths from config json (look for --directory or absolute paths)
+            repo_paths: List[str] = []
+            try:
+                for p in (config_paths or []):
+                    # If a config path is actually a repo URL, clone it
+                    if isinstance(p, str) and (p.endswith('.git') or p.startswith('git@') or p.startswith('https://github.com') or 'huggingface.co' in p):
+                        rp = self._ensure_repo(p)
+                        if rp:
+                            repo_paths.append(rp)
+                        continue
+                    # Otherwise treat as JSON config
+                    with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                        cfg = json.load(fh)
+                    servers = (cfg or {}).get("mcpServers") or {}
+                    for name, s in servers.items():
+                        args = s.get("args") or []
+                        for i, a in enumerate(args):
+                            if a == "--directory" and i + 1 < len(args):
+                                rp = args[i+1]
+                                # If this path doesn't exist but looks like URL, clone
+                                if not os.path.isdir(rp) and (rp.endswith('.git') or rp.startswith('git@') or rp.startswith('https://github.com') or 'huggingface.co' in rp):
+                                    rp2 = self._ensure_repo(rp)
+                                    if rp2:
+                                        repo_paths.append(rp2)
+                                elif os.path.isdir(rp):
+                                    repo_paths.append(rp)
+                            elif isinstance(a, str) and a.startswith("/") and os.path.isdir(a):
+                                repo_paths.append(a)
+            except Exception:
+                pass
+            repo_paths = [rp for rp in repo_paths if os.path.isdir(rp)]
+
+            # Try mcp-checkpoint (JSON to temp file)
+            try:
             import tempfile
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
             tmp_path = tmp.name
@@ -157,11 +164,11 @@ class MCPScanner:
                 issue_types.append(iss.get("type") or "mcp_issue")
                 f = Finding(scan_id=scan.id, module="mcp", scanner="mcp-checkpoint", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
                 db.add(f)
-            cp_ok = True
-        except Exception:
-            pass
-        # Try Cisco YARA-only (raw JSON to stdout)
-        try:
+                cp_ok = True
+            except Exception:
+                pass
+            # Try Cisco YARA-only (raw JSON to stdout)
+            try:
             if config_paths:
                 combined = {"findings": []}
                 for p in config_paths:
@@ -191,11 +198,11 @@ class MCPScanner:
                 issue_types.append(iss.get("type") or "mcp_issue")
                 f = Finding(scan_id=scan.id, module="mcp", scanner="cisco-yara", severity=severity, category=iss.get("type", "unknown"), title=iss.get("title", "Issue"), description=iss.get("description", ""), evidence=iss.get("evidence") or {}, tenant_id=tenant_id)
                 db.add(f)
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # Run regex rules on repo(s)
-        try:
+            # Run regex rules on repo(s)
+            try:
             rs = RuleScanner()
             for rp in repo_paths:
                 for rfind in rs.scan_repo(rp):
@@ -216,11 +223,11 @@ class MCPScanner:
                         remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
                         tenant_id=tenant_id,
                     ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # Run SAST (Semgrep) if available
-        try:
+            # Run SAST (Semgrep) if available
+            try:
             srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
             if srunner.available():
                 for rp in repo_paths:
@@ -242,11 +249,11 @@ class MCPScanner:
                             remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
                             tenant_id=tenant_id,
                         ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # Handshake-like probe (static parsing of Tool defs)
-        try:
+            # Handshake-like probe (static parsing of Tool defs)
+            try:
             for rp in repo_paths:
                 probe = MCPProbe(rp)
                 tools = probe.enumerate_tools()
@@ -268,11 +275,11 @@ class MCPScanner:
                         remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
                         tenant_id=tenant_id,
                     ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # Dynamic safe-run probe (best-effort)
-        try:
+            # Dynamic safe-run probe (best-effort)
+            try:
             for p in (config_paths or []):
                 with open(p, "r", encoding="utf-8", errors="ignore") as fh:
                     cfg = json.load(fh)
@@ -305,11 +312,11 @@ class MCPScanner:
                                 remediation="Disable execute_sql and enforce parameterized statements; introduce strict RBAC and query whitelists.",
                                 tenant_id=tenant_id,
                             ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # Secrets scanners
-        try:
+            # Secrets scanners
+            try:
             th = TruffleHogRunner()
             gl = GitleaksRunner()
             for rp in repo_paths:
@@ -349,19 +356,47 @@ class MCPScanner:
                             evidence=s.get("evidence"),
                             tenant_id=tenant_id,
                         ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # ZAP baseline removed - no longer supported
-        scan.duration_ms = int((time.time() - start) * 1000)
-        scan.total_findings = sum(sev.values())
-        scan.critical_count = sev["critical_count"]
-        scan.high_count = sev["high_count"]
-        scan.medium_count = sev["medium_count"]
-        scan.low_count = sev["low_count"]
-        scan.passed = self.policy.gate(sev, issue_types)
-        db.commit()
-        return scan
+            # ZAP baseline removed - no longer supported
+            scan.duration_ms = int((time.time() - start) * 1000)
+            scan.total_findings = sum(sev.values())
+            scan.critical_count = sev["critical_count"]
+            scan.high_count = sev["high_count"]
+            scan.medium_count = sev["medium_count"]
+            scan.low_count = sev["low_count"]
+            
+            # Set scan result: Pass or Fail based on policy gate
+            scan.passed = self.policy.gate(sev, issue_types)
+            
+            # Set scan status: completed (scan finished successfully)
+            scan.scan_status = "completed"
+            
+            db.commit()
+            return scan
+        except subprocess.TimeoutExpired:
+            # Scan timed out - mark as aborted
+            if scan:
+                scan.scan_status = "aborted"
+                scan.passed = False
+                scan.duration_ms = int((time.time() - start) * 1000)
+                try:
+                    db.commit()
+                except:
+                    db.rollback()
+            raise
+        except Exception as e:
+            # Any other error - mark as failed
+            if scan:
+                scan.scan_status = "failed"
+                scan.passed = False
+                scan.duration_ms = int((time.time() - start) * 1000)
+                try:
+                    db.commit()
+                except:
+                    db.rollback()
+            raise
 
     def to_report(self, scan: Scan):
         return {

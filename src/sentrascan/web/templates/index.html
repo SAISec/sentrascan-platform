@@ -146,26 +146,45 @@
           </a>
         </td>
         <td>
-          {% if scan.scan_status == 'queued' %}
-            <span class="badge badge-warning scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="queued" title="Scan is queued">
-              <span class="icon-status-queued" aria-hidden="true">⏱</span> Queued
+          <!-- Scan Status -->
+          {% if scan.scan_status == 'waiting_to_start' %}
+            <span class="badge badge-warning scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="waiting_to_start" title="Scan is waiting to start">
+              <span class="icon-status-queued" aria-hidden="true">⏱</span> Waiting
             </span>
-          {% elif scan.scan_status == 'running' %}
-            <span class="badge badge-info scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="running" title="Scan is running">
-              <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> Running
+          {% elif scan.scan_status == 'in_progress' %}
+            <span class="badge badge-info scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="in_progress" title="Scan is in progress">
+              <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> In Progress
+            </span>
+          {% elif scan.scan_status == 'completed' %}
+            <span class="badge badge-info scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="completed" title="Scan completed">
+              <span class="icon-status-success" aria-hidden="true">✓</span> Completed
+            </span>
+          {% elif scan.scan_status == 'aborted' %}
+            <span class="badge badge-warning scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="aborted" title="Scan was aborted">
+              <span class="icon-status-error" aria-hidden="true">⚠</span> Aborted
             </span>
           {% elif scan.scan_status == 'failed' %}
             <span class="badge badge-error scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="failed" title="Scan failed">
               <span class="icon-status-error" aria-hidden="true">✕</span> Failed
             </span>
-          {% elif scan.passed %}
-            <span class="badge badge-success scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="completed" title="Scan passed">
-              <span class="icon-status-success" aria-hidden="true">✓</span> PASS
-            </span>
           {% else %}
-            <span class="badge badge-error scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="completed" title="Scan failed security checks">
-              <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+            <span class="badge badge-secondary scan-status-badge" data-scan-id="{{ scan.id }}" data-scan-status="{{ scan.scan_status }}" title="Unknown status">
+              {{ scan.scan_status }}
             </span>
+          {% endif %}
+          
+          <!-- Scan Result (only show if completed) -->
+          {% if scan.scan_status == 'completed' %}
+            <br>
+            {% if scan.passed %}
+              <span class="badge badge-success" title="Scan passed security policy">
+                <span class="icon-status-success" aria-hidden="true">✓</span> PASS
+              </span>
+            {% else %}
+              <span class="badge badge-error" title="Scan failed security policy">
+                <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+              </span>
+            {% endif %}
           {% endif %}
         </td>
         <td>

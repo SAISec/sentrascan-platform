@@ -574,13 +574,26 @@ class JobRunner(Thread):
                 db = get_db_session()
                 if job["type"] == "model":
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
+                    if existing:
+                        # Update existing scan status to in_progress when job starts
+                        existing.scan_status = "in_progress"
+                        db.commit()
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
                     pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
                     ms = ModelScanner(policy=pe)
-                    scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
+                    # If existing scan, pass it to scanner; otherwise scanner creates new one
+                    if existing:
+                        # Scanner will update the existing scan
+                        scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
+                    else:
+                        scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
                     job["on_done"](scan.id)
                 elif job["type"] == "mcp":
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()
+                    if existing:
+                        # Update existing scan status to in_progress when job starts
+                        existing.scan_status = "in_progress"
+                        db.commit()
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
                     pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
                     scanner = MCPScanner(policy=pe)
@@ -1862,7 +1875,7 @@ def ui_scan_model(request: Request, api_key: str = Form(None), model_path: str =
         ms = ModelScanner(policy=pe)
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
-            scan = ScanModel(scan_type="model", target_path=model_path, scan_status="queued", tenant_id=tenant_id)
+            scan = ScanModel(scan_type="model", target_path=model_path, scan_status="waiting_to_start", tenant_id=tenant_id)
             db.add(scan); db.commit()
             def _done(scan_id: str):
                 pass
@@ -1911,7 +1924,7 @@ def ui_scan_mcp(request: Request, api_key: str = Form(None), auto_discover: bool
         paths = [p.strip() for p in (config_paths or "").split("\n") if p.strip()] or []
         if run_async:
             from sentrascan.core.models import Scan as ScanModel
-            scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="queued", tenant_id=tenant_id)
+            scan = ScanModel(scan_type="mcp", target_path=",".join(paths or ["auto"]), scan_status="waiting_to_start", tenant_id=tenant_id)
             db.add(scan); db.commit()
             def _done(scan_id: str):
                 pass

@@ -11,31 +11,49 @@
     <div style="flex: 1;">
       <div style="display: flex; align-items: center; gap: var(--spacing-md); flex-wrap: wrap; margin-bottom: var(--spacing-sm);">
         <h1 style="margin: 0; font-size: var(--font-size-2xl);">Scan Details</h1>
-        {% if scan.scan_status == 'queued' %}
+        <!-- Scan Status -->
+        {% if scan.scan_status == 'waiting_to_start' %}
           <span id="scan-status-badge" class="badge badge-warning">
-            <span class="icon-status-queued" aria-hidden="true">⏱</span> Queued
+            <span class="icon-status-queued" aria-hidden="true">⏱</span> Waiting to Start
           </span>
-        {% elif scan.scan_status == 'running' %}
+        {% elif scan.scan_status == 'in_progress' %}
           <span id="scan-status-badge" class="badge badge-info">
-            <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> Running
+            <span class="icon-status-running spinner spinner-sm" aria-hidden="true">⟳</span> In Progress
+          </span>
+        {% elif scan.scan_status == 'completed' %}
+          <span id="scan-status-badge" class="badge badge-info">
+            <span class="icon-status-success" aria-hidden="true">✓</span> Completed
+          </span>
+        {% elif scan.scan_status == 'aborted' %}
+          <span id="scan-status-badge" class="badge badge-warning">
+            <span class="icon-status-error" aria-hidden="true">⚠</span> Aborted
           </span>
         {% elif scan.scan_status == 'failed' %}
           <span id="scan-status-badge" class="badge badge-error">
             <span class="icon-status-error" aria-hidden="true">✕</span> Failed
           </span>
-        {% elif scan.passed %}
-          <span id="scan-status-badge" class="badge badge-success" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md);">
-            <span class="icon-status-success" aria-hidden="true">✓</span> PASS
-          </span>
         {% else %}
-          <span id="scan-status-badge" class="badge badge-error" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md);">
-            <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+          <span id="scan-status-badge" class="badge badge-secondary">
+            {{ scan.scan_status }}
           </span>
+        {% endif %}
+        
+        <!-- Scan Result (only show if completed) -->
+        {% if scan.scan_status == 'completed' %}
+          {% if scan.passed %}
+            <span id="scan-result-badge" class="badge badge-success" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md); margin-left: var(--spacing-sm);">
+              <span class="icon-status-success" aria-hidden="true">✓</span> PASS
+            </span>
+          {% else %}
+            <span id="scan-result-badge" class="badge badge-error" style="font-size: var(--font-size-lg); padding: var(--spacing-sm) var(--spacing-md); margin-left: var(--spacing-sm);">
+              <span class="icon-status-error" aria-hidden="true">✕</span> FAIL
+            </span>
+          {% endif %}
         {% endif %}
       </div>
       
       <!-- Progress Indicator for Running Scans -->
-      {% if scan.scan_status == 'running' or scan.scan_status == 'queued' %}
+      {% if scan.scan_status == 'in_progress' or scan.scan_status == 'waiting_to_start' %}
       <div id="scan-progress" class="progress-bar" style="margin-top: var(--spacing-md); width: 100%; max-width: 400px;">
         <div class="progress-bar-fill progress-bar-indeterminate" style="width: 100%;"></div>
       </div>
