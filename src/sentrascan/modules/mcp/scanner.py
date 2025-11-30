@@ -216,23 +216,58 @@ class MCPScanner:
                             return after_prefix if after_prefix else file_path
                 return file_path
             
+            def normalize_file_key(file_path: str) -> str:
+                """Normalize file path for grouping - use basename for grouping"""
+                if not file_path:
+                    return file_path
+                cleaned = clean_file_path(file_path)
+                # Remove line numbers from path (e.g., "addon.py:33" -> "addon.py")
+                if ":" in cleaned:
+                    # Split on last colon to separate file path from line number
+                    parts = cleaned.rsplit(":", 1)
+                    if len(parts) == 2:
+                        # Check if second part is a number (line number)
+                        try:
+                            int(parts[1])
+                            cleaned = parts[0]  # Remove line number
+                        except ValueError:
+                            pass  # Not a line number, keep as-is
+                # Extract just the filename for grouping (group by file, not path)
+                import os
+                basename = os.path.basename(cleaned)
+                # If the cleaned path is just the filename, use it as-is
+                # Otherwise, use filename for grouping but keep full path for reference
+                if "/" not in cleaned or cleaned == basename:
+                    return cleaned
+                # For grouping, use just the filename
+                # This ensures addon.py groups together regardless of path
+                return basename
+            
             def track_file_issue(file_path: str, category: str, issue: dict):
                 """Track an issue for a specific file"""
                 if not file_path:
                     return
                 cleaned_path = clean_file_path(file_path)
-                files_affected.add(cleaned_path)
-                if cleaned_path not in file_categories:
-                    file_categories[cleaned_path] = {}
-                if category not in file_categories[cleaned_path]:
-                    file_categories[cleaned_path][category] = 0
-                file_categories[cleaned_path][category] += 1
+                # Use normalized key for grouping (by filename)
+                # Use cleaned_path to ensure line numbers are stripped
+                group_key = normalize_file_key(cleaned_path)
                 
-                if cleaned_path not in file_category_issues:
-                    file_category_issues[cleaned_path] = {}
-                if category not in file_category_issues[cleaned_path]:
-                    file_category_issues[cleaned_path][category] = []
-                file_category_issues[cleaned_path][category].append(issue)
+                # Store the cleaned path in the issue for reference
+                issue_with_path = issue.copy()
+                issue_with_path["original_path"] = cleaned_path
+                
+                files_affected.add(group_key)
+                if group_key not in file_categories:
+                    file_categories[group_key] = {}
+                if category not in file_categories[group_key]:
+                    file_categories[group_key][category] = 0
+                file_categories[group_key][category] += 1
+                
+                if group_key not in file_category_issues:
+                    file_category_issues[group_key] = {}
+                if category not in file_category_issues[group_key]:
+                    file_category_issues[group_key][category] = []
+                file_category_issues[group_key][category].append(issue_with_path)
 
             # Heuristic: derive repo paths from config json (look for --directory or absolute paths)
             repo_paths: List[str] = []
@@ -395,19 +430,49 @@ class MCPScanner:
                         if sev_key in sev:
                             sev[sev_key] += 1
                         issue_types.append("code_rule")
-                        file_path = rfind.get("location") or ""
-                        cleaned_path = clean_file_path(file_path)
+                        # rfind.get("location") already contains "file:line" format from rules.py
+                        original_location = rfind.get("location", "")
                         cat = rfind.get("category", "Code.Pattern")
+                        
+                        # Extract file path and line number from original location
+                        # Original location format: "file:line" (e.g., "addon.py:1641")
+                        if original_location and ":" in original_location:
+                            parts = original_location.rsplit(":", 1)
+                            if len(parts) == 2:
+                                file_part = parts[0]
+                                line_part = parts[1]
+                                cleaned_path = clean_file_path(file_part)
+                                location_str = f"{cleaned_path}:{line_part}"
+                            else:
+                                cleaned_path = clean_file_path(original_location)
+                                location_str = cleaned_path
+                        else:
+                            # Fallback if location doesn't have line number
+                            file_path = original_location or ""
+                            cleaned_path = clean_file_path(file_path)
+                            if cleaned_path and rfind.get('line_number'):
+                                location_str = f"{cleaned_path}:{rfind.get('line_number')}"
+                            else:
+                                location_str = cleaned_path or file_path
+                        
                         # Track file issue
                         if cleaned_path:
                             track_file_issue(cleaned_path, cat, {
                                 "title": rfind.get("title"),
                                 "severity": rfind.get("severity"),
                                 "description": rfind.get("description"),
-                                "location": cleaned_path
+                                "location": cleaned_path,
+                                "line_number": rfind.get("line_number")
                             })
+                        
                         # Clean paths in evidence
-                        evidence = {"rule_id": rfind.get("rule_id")}
+                        # Only include essential fields to avoid repetition
+                        # Location already contains file:line, so we don't need to duplicate file_path
+                        evidence = {
+                            "rule_id": rfind.get("rule_id"),
+                            "line_content": rfind.get("line_content", ""),
+                        }
+                        
                         db.add(Finding(
                             scan_id=scan.id,
                             module="mcp",
@@ -416,7 +481,7 @@ class MCPScanner:
                             category=cat,
                             title=rfind.get("title"),
                             description=rfind.get("description"),
-                            location=cleaned_path or file_path,
+                            location=location_str,
                             evidence=evidence,
                             remediation="Use parameterized queries (psycopg2 placeholders, SQLAlchemy bound params); avoid f-strings/concat; validate inputs; use least-privileged DB roles.",
                             tenant_id=tenant_id,
@@ -449,7 +514,12 @@ class MCPScanner:
                                     "location": location_str
                                 })
                             # Clean paths in evidence
-                            evidence = {"rule_id": sf.get("rule_id"), "line_number": line_num, "file_path": cleaned_path or file_path}
+                            evidence = {
+                                "rule_id": sf.get("rule_id"), 
+                                "line_number": line_num, 
+                                "file_path": cleaned_path or file_path,
+                                "line_content": sf.get("line_content", "")
+                            }
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
@@ -484,8 +554,31 @@ class MCPScanner:
                         if sev_key in sev:
                             sev[sev_key] += 1
                         issue_types.append("mcp_probe")
-                        file_path = pf.get("location") or ""
-                        cleaned_path = clean_file_path(file_path)
+                        # MCP Probe location may contain file:line format or just file path
+                        original_location = pf.get("location") or ""
+                        line_number = pf.get("line_number")
+                        
+                        # Extract file path and line number if location contains "file:line" format
+                        if original_location and ":" in original_location:
+                            parts = original_location.rsplit(":", 1)
+                            if len(parts) == 2:
+                                file_part = parts[0]
+                                line_part = parts[1]
+                                cleaned_path = clean_file_path(file_part)
+                                location_str = f"{cleaned_path}:{line_part}"
+                            else:
+                                cleaned_path = clean_file_path(original_location)
+                                location_str = cleaned_path
+                        elif line_number:
+                            # Build from file path and line_number if available
+                            file_path = original_location or ""
+                            cleaned_path = clean_file_path(file_path)
+                            location_str = f"{cleaned_path}:{line_number}" if cleaned_path else file_path
+                        else:
+                            # Just file path
+                            cleaned_path = clean_file_path(original_location)
+                            location_str = cleaned_path or original_location
+                        
                         cat = pf.get("category", "MCP.ToolSurface")
                         # Track file issue
                         if cleaned_path:
@@ -505,7 +598,7 @@ class MCPScanner:
                             category=cat,
                             title=pf.get("title"),
                             description=pf.get("description"),
-                            location=cleaned_path or file_path,
+                            location=location_str,
                             evidence=evidence,
                             remediation="Remove or strictly gate arbitrary SQL tools; require parameterized queries and explicit allowlists.",
                             tenant_id=tenant_id,
@@ -638,7 +731,28 @@ class MCPScanner:
                             # Clean paths in evidence
                             evidence = s.get("evidence") or {}
                             if isinstance(evidence, dict):
+                                # Extract code line from Match field (format: "KEY = \"value\"")
+                                match_text = evidence.get("Match", "")
+                                if match_text:
+                                    evidence["code_line"] = match_text  # Store actual code
+                                # Preserve line_number and file_path from Gitleaks
+                                if "line_number" not in evidence and s.get("location"):
+                                    # Try to extract line number from location if it's in format "file:line"
+                                    loc = s.get("location", "")
+                                    if ":" in loc:
+                                        try:
+                                            parts = loc.rsplit(":", 1)
+                                            if len(parts) == 2:
+                                                line_num = int(parts[1])
+                                                evidence["line_number"] = line_num
+                                        except (ValueError, IndexError):
+                                            pass
+                                # Also preserve existing fields and clean paths
                                 evidence = {k: clean_file_path(v) if isinstance(v, str) and ("cache" in v or "/tmp" in v) else v for k, v in evidence.items()}
+                            
+                            # Use location from finding (which includes line number if available)
+                            finding_location = s.get("location") or cleaned_path or file_path
+                            
                             db.add(Finding(
                                 scan_id=scan.id,
                                 module="mcp",
@@ -647,7 +761,7 @@ class MCPScanner:
                                 category=cat,
                                 title=s.get("title"),
                                 description=s.get("description"),
-                                location=cleaned_path or file_path,
+                                location=finding_location,
                                 evidence=evidence,
                                 tenant_id=tenant_id,
                             ))
@@ -666,6 +780,14 @@ class MCPScanner:
             scan.high_count = sev["high_count"]
             scan.medium_count = sev["medium_count"]
             scan.low_count = sev["low_count"]
+
+            # Update scan metadata with file-wise breakdown (similar to model scanner)
+            scan.meta = {
+                "files_affected_count": len(files_affected),
+                "files_affected": sorted(list(files_affected)),
+                "file_categories": file_categories,
+                "file_category_issues": file_category_issues,
+            }
 
             # Set scan result: Pass or Fail based on policy gate
             scan.passed = self.policy.gate(sev, issue_types)

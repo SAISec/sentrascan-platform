@@ -688,9 +688,11 @@ def on_startup():
     cleanup_thread.start()
     logger.info("session_cleanup_started", interval_hours=1)
 
-# Baselines API
+# Baselines API - DISABLED
 @app.get("/api/v1/baselines")
 def list_baselines(request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     rows = db.query(Baseline).order_by(Baseline.created_at.desc()).limit(100).all()
     return [
         {
@@ -706,6 +708,8 @@ def list_baselines(request: Request, user_or_key=Depends(require_auth), db: Sess
 
 @app.get("/api/v1/baselines/{baseline_id}")
 def get_baseline(baseline_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     b = db.query(Baseline).filter(Baseline.id == baseline_id).first()
     if not b:
         raise HTTPException(404, "Baseline not found")
@@ -721,13 +725,28 @@ def get_baseline(baseline_id: str, request: Request, user_or_key=Depends(require
 
 @app.post("/ui/baselines")
 def ui_create_baseline(request: Request, name: str = Form(...), description: str | None = Form(None), is_active: bool = Form(True), scan_id: str = Form(...), baseline_type: str = Form(...), target_hash: str | None = Form(None), db: Session = Depends(get_db)):
-    # RBAC: only admin can create
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
+    # RBAC: only admin or super_admin can create
     user = get_session_user(request, db)
-    if not user or user.role != "admin":
-        raise HTTPException(403, "Insufficient role: admin required")
+    if not user:
+        raise HTTPException(401, "Authentication required")
+    user_role = getattr(user, "role", None)
+    if user_role not in ["admin", "super_admin"]:
+        raise HTTPException(403, f"Insufficient role: admin or super_admin required (current: {user_role})")
+    
+    # Get tenant_id from user (more reliable than require_tenant for UI endpoints)
+    tenant_id = None
+    if hasattr(user, 'tenant_id') and user.tenant_id:
+        tenant_id = user.tenant_id
+    if not tenant_id:
+        # Fallback to require_tenant if user doesn't have tenant_id
+        tenant_id = require_tenant(request, db)
     
     # Get scan report to use as baseline content
-    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    q_scan = db.query(Scan).filter(Scan.id == scan_id)
+    q_scan = filter_by_tenant(q_scan, Scan, tenant_id)
+    scan = q_scan.first()
     if not scan:
         raise HTTPException(404, "Scan not found")
     
@@ -742,29 +761,48 @@ def ui_create_baseline(request: Request, name: str = Form(...), description: str
         sbom_id=scan.sbom_id,
         approved_by=getattr(user, "name", None) or "UI User",
         is_active=is_active,
+        tenant_id=tenant_id,  # Add tenant_id
     )
     
     # Get scan report for content
     try:
         from sentrascan.modules.model.scanner import ModelScanner
         from sentrascan.modules.mcp.scanner import MCPScanner
+        from sentrascan.core.policy import PolicyEngine
         if baseline_type == "model":
-            scanner = ModelScanner()
+            pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
+            scanner = ModelScanner(policy=pe)
             report = scanner.to_report(scan, db)
         else:
-            scanner = MCPScanner()
+            pe = PolicyEngine.default_mcp(tenant_id=tenant_id, db=db)
+            scanner = MCPScanner(policy=pe)
             report = scanner.to_report(scan, db)
         b.content = report
     except Exception as e:
         # Fallback: use minimal content
+        import structlog
+        logger = structlog.get_logger()
+        logger.warning("baseline_report_generation_failed", error=str(e), scan_id=scan_id, baseline_type=baseline_type, exc_info=True)
         b.content = {"scan_id": scan_id, "type": baseline_type}
     
-    db.add(b)
-    db.commit()
-    return RedirectResponse(url=f"/baselines", status_code=303)
+    try:
+        db.add(b)
+        db.commit()
+        import structlog
+        logger = structlog.get_logger()
+        logger.info("baseline_created", baseline_id=b.id, scan_id=scan_id, baseline_type=baseline_type, tenant_id=tenant_id)
+        return RedirectResponse(url=f"/baselines", status_code=303)
+    except Exception as e:
+        db.rollback()
+        import structlog
+        logger = structlog.get_logger()
+        logger.error("baseline_creation_failed", error=str(e), scan_id=scan_id, baseline_type=baseline_type, tenant_id=tenant_id, exc_info=True)
+        raise HTTPException(500, f"Failed to create baseline: {str(e)}")
 
 @app.post("/api/v1/baselines")
 def create_baseline(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     # RBAC: require scan.create permission (baselines are tied to scans)
     if not check_permission(user_or_key, "scan.create"):
         raise HTTPException(403, "Permission denied: scan.create required")
@@ -788,6 +826,8 @@ def create_baseline(payload: dict, request: Request, user_or_key=Depends(require
 
 @app.delete("/api/v1/baselines/{baseline_id}")
 def delete_baseline(baseline_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     # RBAC: require scan.delete permission (baselines are tied to scans)
     if not check_permission(user_or_key, "scan.delete"):
         raise HTTPException(403, "Permission denied: scan.delete required")
@@ -811,6 +851,8 @@ def delete_baseline(baseline_id: str, request: Request, user_or_key=Depends(requ
 
 @app.post("/api/v1/baselines/compare")
 def compare_baselines(payload: dict, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     left_id = payload.get("left_id")
     right_id = payload.get("right_id")
     if not (left_id and right_id):
@@ -852,6 +894,8 @@ def compare_baselines(payload: dict, request: Request, user_or_key=Depends(requi
 
 @app.get("/baselines")
 def ui_baselines(request: Request, sort: str | None = None, order: str | None = None):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     db = get_db_session()
     try:
         user = get_session_user(request, db)
@@ -916,6 +960,8 @@ def ui_baselines(request: Request, sort: str | None = None, order: str | None = 
 
 @app.get("/baseline/compare")
 def ui_baseline_compare(left: str, right: str, request: Request):
+    # Baseline functionality disabled
+    raise HTTPException(404, "Baseline functionality has been disabled")
     db = get_db_session()
     try:
         user = get_session_user(request, db)
@@ -1313,19 +1359,66 @@ def download_report(scan_id: str, request: Request, user_or_key=Depends(require_
     
     if not scan:
         raise HTTPException(404, "Scan not found")
-    # Reconstruct a normalized report similar to to_report
-    return {
-        "scan_id": scan.id,
-        "timestamp": scan.created_at.isoformat(),
-        "gate_result": {
-            "passed": bool(scan.passed),
-            "total_findings": scan.total_findings,
-            "critical_count": scan.critical_count,
-            "high_count": scan.high_count,
-            "medium_count": scan.medium_count,
-            "low_count": scan.low_count,
+    
+    # Get all findings for this scan
+    q_findings = db.query(Finding).filter(Finding.scan_id == scan_id)
+    q_findings = filter_by_tenant(q_findings, Finding, tenant_id)
+    findings = q_findings.all()
+    
+    # Build comprehensive report with metadata, summary, and findings
+    report = {
+        "metadata": {
+            "scan_id": scan.id,
+            "scan_type": scan.scan_type,
+            "target_path": scan.target_path,
+            "target_format": scan.target_format,
+            "target_hash": scan.target_hash,
+            "scan_status": scan.scan_status,
+            "created_at": scan.created_at.isoformat() if scan.created_at else None,
+            "duration_ms": scan.duration_ms or 0,
+            "baseline_id": scan.baseline_id,
+            "sbom_id": scan.sbom_id,
+            "tenant_id": scan.tenant_id,
         },
+        "summary": {
+            "gate_result": {
+                "passed": bool(scan.passed),
+                "total_findings": scan.total_findings or 0,
+                "critical_count": scan.critical_count or 0,
+                "high_count": scan.high_count or 0,
+                "medium_count": scan.medium_count or 0,
+                "low_count": scan.low_count or 0,
+            },
+            "files_affected": scan.meta.get("files_affected_count", 0) if scan.meta else 0,
+            "scan_duration_seconds": (scan.duration_ms or 0) / 1000.0,
+        },
+        "findings": [
+            {
+                "id": f.id,
+                "severity": f.severity,
+                "category": f.category,
+                "scanner": f.scanner,
+                "title": f.title,
+                "description": f.description,
+                "location": f.location,
+                "evidence": f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {}),
+                "remediation": f.remediation,
+            }
+            for f in findings
+        ],
+        "exported_at": datetime.utcnow().isoformat(),
     }
+    
+    # Add file-wise breakdown if available
+    if scan.meta and isinstance(scan.meta, dict):
+        if "files_affected" in scan.meta:
+            report["file_breakdown"] = {
+                "files_affected_count": scan.meta.get("files_affected_count", 0),
+                "files_affected": scan.meta.get("files_affected", []),
+                "file_categories": scan.meta.get("file_categories", {}),
+            }
+    
+    return report
 
 @app.get("/api/v1/scans/{scan_id}/sbom")
 def download_sbom(scan_id: str, request: Request, user_or_key=Depends(require_auth), db: Session = Depends(get_db)):
@@ -2280,17 +2373,47 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
     if format == "csv":
         output = io.StringIO()
         writer = csv.writer(output)
-        writer.writerow(["ID", "Severity", "Category", "Scanner", "Title", "Description", "Location"])
+        
+        # Write metadata and summary section
+        writer.writerow(["SentraScan Findings Export"])
+        writer.writerow([])
+        writer.writerow(["Metadata"])
+        writer.writerow(["Scan ID", scan.id])
+        writer.writerow(["Scan Type", scan.scan_type])
+        writer.writerow(["Target Path", scan.target_path or ""])
+        writer.writerow(["Target Format", scan.target_format or ""])
+        writer.writerow(["Target Hash", scan.target_hash or ""])
+        writer.writerow(["Scan Status", scan.scan_status or ""])
+        writer.writerow(["Created At", scan.created_at.isoformat() if scan.created_at else ""])
+        writer.writerow(["Duration (ms)", scan.duration_ms or 0])
+        writer.writerow([])
+        writer.writerow(["Summary"])
+        writer.writerow(["Gate Result", "PASS" if scan.passed else "FAIL"])
+        writer.writerow(["Total Findings", scan.total_findings or 0])
+        writer.writerow(["Critical Count", scan.critical_count or 0])
+        writer.writerow(["High Count", scan.high_count or 0])
+        writer.writerow(["Medium Count", scan.medium_count or 0])
+        writer.writerow(["Low Count", scan.low_count or 0])
+        if scan.meta and isinstance(scan.meta, dict):
+            writer.writerow(["Files Affected", scan.meta.get("files_affected_count", 0)])
+        writer.writerow(["Exported At", datetime.utcnow().isoformat()])
+        writer.writerow([])
+        writer.writerow(["Findings"])
+        writer.writerow(["ID", "Severity", "Category", "Scanner", "Title", "Description", "Location", "Remediation"])
+        
+        # Write findings
         for f in findings:
             writer.writerow([
                 f.id,
-                f.severity,
+                f.severity or "",
                 f.category or "",
                 f.scanner or "",
-                f.title or "",
+                (f.title or "").replace("\n", " ").replace("\r", " "),
                 (f.description or "").replace("\n", " ").replace("\r", " ")[:500],  # Truncate long descriptions
-                f.location or ""
+                f.location or "",
+                (f.remediation or "").replace("\n", " ").replace("\r", " ")[:200]  # Truncate remediation
             ])
+        
         output.seek(0)
         return Response(
             content=output.getvalue(),
@@ -2298,8 +2421,29 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
             headers={"Content-Disposition": f"attachment; filename=sentrascan-findings-{scan_id[:8]}.csv"}
         )
     else:
+        # JSON format - include metadata and summary
         return {
-            "scan_id": scan_id,
+            "metadata": {
+                "scan_id": scan_id,
+                "scan_type": scan.scan_type,
+                "target_path": scan.target_path,
+                "target_format": scan.target_format,
+                "target_hash": scan.target_hash,
+                "scan_status": scan.scan_status,
+                "created_at": scan.created_at.isoformat() if scan.created_at else None,
+                "duration_ms": scan.duration_ms or 0,
+            },
+            "summary": {
+                "gate_result": {
+                    "passed": bool(scan.passed),
+                    "total_findings": scan.total_findings or 0,
+                    "critical_count": scan.critical_count or 0,
+                    "high_count": scan.high_count or 0,
+                    "medium_count": scan.medium_count or 0,
+                    "low_count": scan.low_count or 0,
+                },
+                "files_affected": scan.meta.get("files_affected_count", 0) if scan.meta else 0,
+            },
             "exported_at": datetime.utcnow().isoformat(),
             "total_findings": len(findings),
             "findings": [
@@ -2310,7 +2454,9 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
                     "scanner": f.scanner,
                     "title": f.title,
                     "description": f.description,
-                    "location": f.location
+                    "location": f.location,
+                    "evidence": f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {}),
+                    "remediation": f.remediation,
                 }
                 for f in findings
             ]
@@ -2349,8 +2495,8 @@ def ui_scan_detail(scan_id: str, request: Request):
         q_findings = filter_by_tenant(q_findings, Finding, tenant_id)
         findings = q_findings.all()
         
-        # Get existing baseline for this scan if any
-        existing_baseline = db.query(Baseline).filter(Baseline.scan_id == scan_id).first()
+        # Baseline functionality disabled - existing_baseline removed
+        existing_baseline = None
         
         breadcrumb_items = [
             {"label": "Dashboard", "url": "/"},

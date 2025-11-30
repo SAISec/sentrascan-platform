@@ -10,7 +10,9 @@ class SASTRunner:
     """
 
     DEFAULT_CONFIGS = [
-        "p/python",  # Semgrep maintained Python rules
+        "p/python",           # Semgrep maintained Python rules
+        "p/security-audit",  # Security-focused rules
+        "p/injection",        # Injection detection patterns
     ]
 
     def __init__(self, custom_rules_dir: str | None = None):
@@ -51,6 +53,17 @@ class SASTRunner:
             line = start.get("line")
             message = r.get("extra", {}).get("message") or r.get("check_id")
             rule_id = r.get("check_id")
+            # Extract line content from Semgrep result
+            # Semgrep provides lines in extra.metavars or we can read from file
+            line_content = ""
+            if path and line:
+                try:
+                    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                        if line <= len(lines):
+                            line_content = lines[line - 1].strip()[:200]  # Truncate long lines
+                except Exception:
+                    pass
             normalized.append({
                 "severity": sev,
                 "path": path,
@@ -58,5 +71,6 @@ class SASTRunner:
                 "rule_id": rule_id,
                 "message": message,
                 "engine": "sentrascan-semgrep",
+                "line_content": line_content,
             })
         return normalized

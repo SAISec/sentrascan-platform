@@ -49,13 +49,7 @@
               Dashboard
             </a>
           </li>
-          <li>
-            {% set is_baselines_active = 'nav-link-active' if current_path and current_path.startswith('/baselines') else '' %}
-            <a href="/baselines" class="nav-link {{ is_baselines_active }}" 
-               style="display: block; padding: var(--spacing-sm) var(--spacing-md); border-radius: var(--radius-md); transition: background-color var(--transition-fast);">
-              Baselines
-            </a>
-          </li>
+          {# Baseline functionality disabled - navigation link removed #}
           <li>
             {% set is_scan_active = 'nav-link-active' if current_path and current_path.startswith('/ui/scan') else '' %}
             <a href="/ui/scan" class="nav-link {{ is_scan_active }}" 
@@ -233,12 +227,7 @@
             Dashboard
           </a>
         </li>
-        <li style="margin-bottom: var(--spacing-xs);">
-          {% set is_baselines_active = 'nav-link-active' if current_path and current_path.startswith('/baselines') else '' %}
-          <a href="/baselines" class="nav-link {{ is_baselines_active }}" style="display: block; padding: var(--spacing-md); border-radius: var(--radius-md); transition: background-color var(--transition-fast);">
-            Baselines
-          </a>
-        </li>
+        {# Baseline functionality disabled - navigation link removed #}
         <li style="margin-bottom: var(--spacing-xs);">
           {% set is_scan_active = 'nav-link-active' if current_path and current_path.startswith('/ui/scan') else '' %}
           <a href="/ui/scan" class="nav-link {{ is_scan_active }}" style="display: block; padding: var(--spacing-md); border-radius: var(--radius-md); transition: background-color var(--transition-fast);">

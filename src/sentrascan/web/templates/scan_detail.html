@@ -83,6 +83,9 @@
     
     <!-- Action Buttons -->
     <div style="display: flex; gap: var(--spacing-sm); flex-wrap: wrap;">
+      <button class="btn btn-secondary" onclick="refreshScanPage()" aria-label="Refresh scan data">
+        <span aria-hidden="true">🔄</span> Refresh
+      </button>
       <a href="/api/v1/scans/{{ scan.id }}/report" class="btn btn-secondary" download aria-label="Download JSON report for scan {{ scan.id }}">Download JSON Report</a>
       {% if scan.sbom_id %}
       <a href="/api/v1/scans/{{ scan.id }}/sbom" class="btn btn-secondary" download aria-label="Download SBOM for scan {{ scan.id }}">Download SBOM</a>
@@ -90,11 +93,7 @@
       {% if findings and findings|length > 0 %}
       <a href="/api/v1/scans/{{ scan.id }}/findings/export?format=csv" class="btn btn-secondary" download aria-label="Export findings as CSV">Export Findings (CSV)</a>
       {% endif %}
-      {% if existing_baseline %}
-      <a href="/baseline/compare?left={{ existing_baseline.id }}&right={{ scan.id }}" class="btn btn-secondary">Compare with Baseline</a>
-      {% else %}
-      <button class="btn btn-primary" onclick="openCreateBaselineModal()">Create Baseline</button>
-      {% endif %}
+      {# Baseline functionality disabled #}
     </div>
   </div>
   
@@ -172,11 +171,24 @@
     {% set files_affected = scan.meta.get('files_affected', []) %}
     
     {% for file_path in files_affected %}
+      {# file_path is now the normalized key (filename) for grouping #}
+      {# Get the actual paths from the issues to display #}
+      {% set file_issues = file_category_issues.get(file_path, {}) %}
+      {% set matched_path = file_path %}
+      
+      {# Extract display path from first issue's original_path if available #}
       {% set display_path = file_path %}
-      {% if '/cache/.modelaudit/cache/' in file_path %}
-        {% set cache_index = file_path.find('/cache/.modelaudit/cache/') %}
+      {% for category, issues in file_issues.items() %}
+        {% if issues|length > 0 and issues[0].original_path %}
+          {% set display_path = issues[0].original_path %}
+        {% endif %}
+      {% endfor %}
+      
+      {# Clean display path for better readability #}
+      {% if '/cache/.modelaudit/cache/' in display_path %}
+        {% set cache_index = display_path.find('/cache/.modelaudit/cache/') %}
         {% if cache_index >= 0 %}
-          {% set after_cache = file_path[cache_index + 26:] %}
+          {% set after_cache = display_path[cache_index + 26:] %}
           {% if 'huggingface' in after_cache %}
             {% set hf_index = after_cache.find('huggingface') %}
             {% if hf_index >= 0 %}
@@ -186,7 +198,8 @@
         {% endif %}
       {% endif %}
       
-      {% set file_issues = file_category_issues.get(file_path, {}) %}
+      {# Check if there are any issues (including INFO) to display #}
+      {% set has_issues = file_issues|length > 0 or file_categories.get(matched_path, {})|length > 0 %}
       {% set has_non_info_issues = false %}
       {% for category, issues in file_issues.items() %}
         {% for issue in issues %}
@@ -196,17 +209,18 @@
         {% endfor %}
       {% endfor %}
       
-      {% if has_non_info_issues %}
+      {# Show file section if there are categories or non-INFO issues #}
+      {% if has_issues or has_non_info_issues %}
       <div class="file-section" style="margin-top: var(--spacing-lg); padding: var(--spacing-md); border: 1px solid var(--color-border-light); border-radius: var(--radius-md);">
         <h3 style="margin: 0 0 var(--spacing-md) 0; font-size: var(--font-size-lg);">
           <code style="background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ display_path }}</code>
         </h3>
         
-        {% if file_categories.get(file_path) %}
+        {% if file_categories.get(matched_path) %}
         <div style="margin-bottom: var(--spacing-md);">
           <strong>Categories:</strong>
           <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-top: var(--spacing-xs);">
-            {% for category, count in file_categories.get(file_path, {}).items() %}
+            {% for category, count in file_categories.get(matched_path, {}).items() %}
             <span class="badge badge-neutral" style="font-size: var(--font-size-sm);">
               {{ category }}: {{ count }}
             </span>
@@ -215,10 +229,10 @@
         </div>
         {% endif %}
         
-        {% if file_category_issues.get(file_path) %}
+        {% if file_issues %}
         <div class="file-issues">
           <strong>Issues by Category:</strong>
-          {% for category, issues in file_category_issues.get(file_path, {}).items() %}
+          {% for category, issues in file_issues.items() %}
             {% set filtered_issues = [] %}
             {% for issue in issues %}
               {% if issue.severity and issue.severity.upper() not in ['INFO'] %}
@@ -446,24 +460,41 @@ function toggleFileBreakdown(event) {
                     <div style="margin-bottom: var(--spacing-md);">
                       <strong>Location:</strong>
                       <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm);">{{ finding.location }}</code>
+                      {% if finding.evidence and (finding.evidence.get('line_content') or finding.evidence.get('code_line')) %}
+                      <div style="margin-top: var(--spacing-xs); padding: var(--spacing-sm); background: var(--color-gray-50); border-left: 3px solid var(--color-primary); border-radius: var(--radius-sm);">
+                        <code style="font-family: 'Courier New', monospace; font-size: var(--font-size-sm);">{{ finding.evidence.get('line_content') or finding.evidence.get('code_line') }}</code>
+                      </div>
+                      {% endif %}
                     </div>
                     {% endif %}
-                    {% if finding.evidence and finding.evidence.get('line_number') %}
-                    <div style="margin-bottom: var(--spacing-md);">
-                      <strong>Line Number:</strong>
-                      <span class="badge badge-info" style="margin-left: var(--spacing-xs);">{{ finding.evidence.get('line_number') }}</span>
-                    </div>
-                    {% endif %}
-                    {% if finding.evidence and finding.evidence.get('file_path') %}
-                    <div style="margin-bottom: var(--spacing-md);">
-                      <strong>File Path:</strong>
-                      <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ finding.evidence.get('file_path') }}</code>
-                    </div>
+                    {# Only show line number and file path separately if they're NOT already in location #}
+                    {% if finding.location and ':' not in finding.location %}
+                      {% if finding.evidence and finding.evidence.get('line_number') %}
+                      <div style="margin-bottom: var(--spacing-md);">
+                        <strong>Line Number:</strong>
+                        <span class="badge badge-info" style="margin-left: var(--spacing-xs);">{{ finding.evidence.get('line_number') }}</span>
+                      </div>
+                      {% endif %}
+                      {% if finding.evidence and finding.evidence.get('file_path') and finding.evidence.get('file_path') != finding.location %}
+                      <div style="margin-bottom: var(--spacing-md);">
+                        <strong>File Path:</strong>
+                        <code style="display: block; margin-top: var(--spacing-xs); background: var(--color-gray-100); padding: var(--spacing-xs) var(--spacing-sm); border-radius: var(--radius-sm); word-break: break-all;">{{ finding.evidence.get('file_path') }}</code>
+                      </div>
+                      {% endif %}
                     {% endif %}
                     {% if finding.evidence %}
                     <div style="margin-bottom: var(--spacing-md);">
                       <strong>Evidence:</strong>
-                      <pre style="margin: var(--spacing-xs) 0 0 0; background: var(--color-gray-100); padding: var(--spacing-md); border-radius: var(--radius-md); overflow-x: auto; font-size: var(--font-size-sm);">{{ finding.evidence|tojson(indent=2) if finding.evidence else 'No evidence' }}</pre>
+                      {% if finding.evidence.get('code_line') or finding.evidence.get('line_content') %}
+                        <pre style="margin: var(--spacing-xs) 0 0 0; background: var(--color-gray-100); padding: var(--spacing-md); border-radius: var(--radius-md); overflow-x: auto; font-size: var(--font-size-sm); font-family: 'Courier New', monospace;">{{ finding.evidence.get('code_line') or finding.evidence.get('line_content') }}</pre>
+                        {% if finding.evidence.get('rule_id') %}
+                        <div style="margin-top: var(--spacing-xs); font-size: var(--font-size-xs); color: var(--color-text-secondary);">
+                          Rule: <code>{{ finding.evidence.get('rule_id') }}</code>
+                        </div>
+                        {% endif %}
+                      {% else %}
+                        <pre style="margin: var(--spacing-xs) 0 0 0; background: var(--color-gray-100); padding: var(--spacing-md); border-radius: var(--radius-md); overflow-x: auto; font-size: var(--font-size-sm);">{{ finding.evidence|tojson(indent=2) if finding.evidence else 'No evidence' }}</pre>
+                      {% endif %}
                     </div>
                     {% endif %}
                     {% if finding.remediation %}
@@ -847,224 +878,23 @@ function copyFindingData(findingId) {
 }
 </script>
 
-<!-- Create Baseline Modal -->
-<div id="create-baseline-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); z-index: var(--z-index-modal); align-items: center; justify-content: center;">
-  <div class="modal-content card" style="max-width: 500px; width: 90%; max-height: 90vh; overflow-y: auto; position: relative;">
-    <button class="modal-close" onclick="closeCreateBaselineModal()" aria-label="Close modal" style="position: absolute; top: var(--spacing-md); right: var(--spacing-md); background: none; border: none; font-size: var(--font-size-xl); cursor: pointer; color: var(--color-text-secondary);">×</button>
-    
-    <h2 style="margin: 0 0 var(--spacing-lg) 0;">Create Baseline</h2>
-    
-    <form id="create-baseline-form" onsubmit="submitCreateBaseline(event)">
-      <div class="form-group">
-        <label for="baseline_name" class="form-label">
-          Name <span class="required-indicator">*</span>
-        </label>
-        <input 
-          type="text" 
-          id="baseline_name" 
-          name="name" 
-          class="form-input" 
-          required
-          aria-required="true"
-          aria-invalid="false"
-          placeholder="e.g., production-baseline-2025-01"
-          aria-describedby="baseline_name_help baseline_name_error">
-        <div id="baseline_name_help" class="form-help-text">
-          A descriptive name for this baseline
-        </div>
-        <div id="baseline_name_error" class="form-error-message" role="alert"></div>
-      </div>
+{# Baseline functionality disabled - modal HTML completely removed #}
 
-      <div class="form-group">
-        <label for="baseline_description" class="form-label">
-          Description
-        </label>
-        <textarea 
-          id="baseline_description" 
-          name="description" 
-          class="form-textarea" 
-          rows="3"
-          placeholder="Optional description of this baseline"
-          aria-describedby="baseline_description_help"></textarea>
-        <div id="baseline_description_help" class="form-help-text">
-          Optional description explaining what this baseline represents
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label for="baseline_is_active" class="form-checkbox-label" style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
-          <input 
-            type="checkbox" 
-            id="baseline_is_active"
-            name="is_active" 
-            checked
-            class="form-checkbox"
-            aria-describedby="baseline_is_active_help">
-          <span>Set as active baseline</span>
-        </label>
-        <div id="baseline_is_active_help" class="form-help-text">
-          Active baselines are used for automatic drift detection
-        </div>
-      </div>
-
-      <input type="hidden" name="scan_id" value="{{ scan.id }}" aria-hidden="true">
-      <input type="hidden" name="baseline_type" value="{{ scan.scan_type }}" aria-hidden="true">
-      <input type="hidden" name="target_hash" value="{{ scan.target_hash or '' }}" aria-hidden="true">
-
-      <div class="form-actions" style="margin-top: var(--spacing-lg); display: flex; gap: var(--spacing-md); justify-content: flex-end;">
-        <button type="button" class="btn btn-secondary" onclick="closeCreateBaselineModal()">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="create-baseline-submit">
-          <span class="submit-text">Create Baseline</span>
-          <span class="submit-spinner spinner spinner-sm" style="display: none; margin-left: var(--spacing-xs);" aria-hidden="true"></span>
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
+{# Baseline functionality disabled - all JavaScript functions removed #}
 <script>
-// Create Baseline Modal Functions
-function openCreateBaselineModal() {
-  const modal = document.getElementById('create-baseline-modal');
-  modal.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
-  
-  // Focus on name input
-  setTimeout(() => {
-    document.getElementById('baseline_name').focus();
-  }, 100);
-  
-  // Trap focus within modal
-  trapFocus(modal);
-}
 
-function closeCreateBaselineModal() {
-  const modal = document.getElementById('create-baseline-modal');
-  modal.style.display = 'none';
-  document.body.style.overflow = '';
-  
-  // Reset form
-  document.getElementById('create-baseline-form').reset();
-  document.getElementById('baseline_name_error').textContent = '';
-  document.getElementById('baseline_name').classList.remove('form-input-error');
+// Refresh scan page function
+function refreshScanPage() {
+  // Force a hard reload to bypass cache and get latest data
+  // Use location.href with cache-busting parameter for reliable refresh
+  const url = new URL(window.location.href);
+  // Remove existing _refresh parameter if present
+  url.searchParams.delete('_refresh');
+  // Add new timestamp to force cache bypass
+  url.searchParams.set('_refresh', Date.now());
+  // Navigate to the new URL (this forces a full page reload)
+  window.location.href = url.toString();
 }
-
-function submitCreateBaseline(event) {
-  event.preventDefault();
-  
-  const form = event.target;
-  const formData = new FormData(form);
-  const data = {
-    name: formData.get('name'),
-    description: formData.get('description') || null,
-    is_active: formData.get('is_active') === 'on',
-    scan_id: formData.get('scan_id'),
-    baseline_type: formData.get('baseline_type'),
-    target_hash: formData.get('target_hash') || null,
-    content: {} // Will be populated from scan data
-  };
-  
-  // Validate
-  if (!data.name || data.name.trim().length === 0) {
-    const errorDiv = document.getElementById('baseline_name_error');
-    const nameInput = document.getElementById('baseline_name');
-    errorDiv.textContent = 'Baseline name is required';
-    nameInput.classList.add('form-input-error');
-    nameInput.setAttribute('aria-invalid', 'true');
-    return;
-  }
-  
-  // Show loading state
-  const submitBtn = document.getElementById('create-baseline-submit');
-  const spinner = submitBtn.querySelector('.submit-spinner');
-  const submitText = submitBtn.querySelector('.submit-text');
-  submitBtn.disabled = true;
-  submitBtn.setAttribute('aria-busy', 'true');
-  spinner.style.display = 'inline-block';
-  submitText.textContent = 'Creating...';
-  
-  // Create baseline using UI endpoint (supports session auth)
-  const formData = new FormData();
-  formData.append('name', data.name);
-  if (data.description) formData.append('description', data.description);
-  formData.append('is_active', data.is_active ? 'on' : 'off');
-  formData.append('scan_id', data.scan_id);
-  formData.append('baseline_type', data.baseline_type);
-  if (data.target_hash) formData.append('target_hash', data.target_hash);
-  
-  // Create baseline
-  fetch('/ui/baselines', {
-    method: 'POST',
-    body: formData
-  })
-    .then(response => {
-      if (response.ok || response.redirected) {
-        showToast('Baseline created successfully', 'success');
-        closeCreateBaselineModal();
-        // Redirect to baselines page
-        if (response.redirected) {
-          window.location.href = response.url;
-        } else {
-          window.location.href = '/baselines';
-        }
-      } else {
-        return response.text().then(text => {
-          let errorMsg = 'Failed to create baseline';
-          try {
-            const err = JSON.parse(text);
-            errorMsg = err.detail || errorMsg;
-          } catch (e) {
-            errorMsg = text || errorMsg;
-          }
-          throw new Error(errorMsg);
-        });
-      }
-    })
-    .catch(error => {
-      console.error('Error creating baseline:', error);
-      showToast(error.message || 'Failed to create baseline', 'error');
-      
-      // Reset button state
-      submitBtn.disabled = false;
-      submitBtn.setAttribute('aria-busy', 'false');
-      spinner.style.display = 'none';
-      submitText.textContent = 'Create Baseline';
-    });
-}
-
-// Focus trap for modal
-function trapFocus(modal) {
-  const focusableElements = modal.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  );
-  const firstElement = focusableElements[0];
-  const lastElement = focusableElements[focusableElements.length - 1];
-  
-  modal.addEventListener('keydown', function(e) {
-    if (e.key === 'Tab') {
-      if (e.shiftKey) {
-        if (document.activeElement === firstElement) {
-          e.preventDefault();
-          lastElement.focus();
-        }
-      } else {
-        if (document.activeElement === lastElement) {
-          e.preventDefault();
-          firstElement.focus();
-        }
-      }
-    } else if (e.key === 'Escape') {
-      closeCreateBaselineModal();
-    }
-  });
-}
-
-// Close modal on overlay click
-document.getElementById('create-baseline-modal').addEventListener('click', function(e) {
-  if (e.target === this) {
-    closeCreateBaselineModal();
-  }
-});
 </script>
 
 {% endblock %}

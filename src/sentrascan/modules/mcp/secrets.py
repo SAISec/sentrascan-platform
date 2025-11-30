@@ -177,6 +177,25 @@ class GitleaksRunner:
                 rule = item.get("Rule") or item.get("RuleID") or "Secret"
                 file = item.get("File") or item.get("Path")
                 
+                # Extract line number from Gitleaks output
+                # Gitleaks provides StartLine or Start.StartLine
+                line_number = None
+                start_info = item.get("StartLine") or item.get("Start")
+                if isinstance(start_info, dict):
+                    line_number = start_info.get("Line")
+                elif isinstance(start_info, (int, str)):
+                    try:
+                        line_number = int(start_info)
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Build location string with line number if available
+                location = file
+                if file and line_number:
+                    location = f"{file}:{line_number}"
+                elif file:
+                    location = file
+                
                 # Determine severity based on rule/tags
                 # API keys and tokens are typically MEDIUM severity (hardcoded secrets)
                 # Passwords and other high-value secrets are HIGH
@@ -189,13 +208,24 @@ class GitleaksRunner:
                 elif any(tag in ["password", "secret", "credential"] for tag in tags_lower) or "password" in rule_lower or "secret" in rule_lower:
                     severity = "HIGH"  # Passwords and credentials
                 
+                # Build evidence with line number
+                evidence = {
+                    "Match": item.get("Match"),
+                    "Tags": item.get("Tags"),
+                    "RuleID": item.get("RuleID") or item.get("Rule"),
+                }
+                if line_number:
+                    evidence["line_number"] = line_number
+                if file:
+                    evidence["file_path"] = file
+                
                 findings.append({
                     "severity": severity,
                     "title": f"Gitleaks: {rule}",
                     "description": item.get("Description") or "Secret detected",
-                    "location": file,
+                    "location": location,
                     "engine": "sentrascan-gitleaks",
-                    "evidence": {"Match": item.get("Match"), "Tags": item.get("Tags"), "RuleID": item.get("RuleID")},
+                    "evidence": evidence,
                 })
         finally:
             # Clean up temp file
