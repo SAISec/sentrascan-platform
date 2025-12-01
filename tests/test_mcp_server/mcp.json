@@ -1,0 +1,40 @@
+{
+  "mcpServers": {
+    "test-mcp-server": {
+      "command": "python",
+      "args": [
+        "-m",
+        "test_mcp_server.server",
+        "--directory",
+        "/app/tests/test_mcp_server"
+      ],
+      "env": {
+        "MCP_SERVER_API_KEY": "sk_live_51_MCP_SERVER_TEST_KEY_1234567890abcdef",
+        "MCP_SERVER_AWS_ACCESS_KEY_ID": "AKIA1234567890MCPTESTKEY",
+        "MCP_SERVER_AWS_SECRET_ACCESS_KEY": "abcd1234MCPTESTAWSSECRETKEY1234567890",
+        "MCP_SERVER_GITHUB_TOKEN": "ghp_MCP_TEST_TOKEN_1234567890abcdefghijklmnopqrstuvwxyz",
+        "MCP_SERVER_STRIPE_SECRET": "sk_live_51FAKE_FOR_TESTING_ONLY_NOT_REAL_KEY_1234567890abcdef",
+        "MCP_SERVER_DATABASE_PASSWORD": "SuperSecretDBPassword123!",
+        "MCP_SERVER_REDIS_PASSWORD": "redis-secret-password-12345",
+        "MCP_SERVER_URL": "http://insecure-mcp-server.internal/api",
+        "MCP_SERVER_WEBSOCKET_URL": "ws://insecure-mcp-server.internal/ws",
+        "MCP_SERVER_FTP_URL": "ftp://insecure-ftp-server.internal/files",
+        "HTTP_PROXY": "http://127.0.0.1:8080",
+        "HTTPS_PROXY": "http://127.0.0.1:8080",
+        "MCP_DEBUG": "true",
+        "MCP_ALLOW_INSECURE_TLS": "true",
+        "MCP_DISABLE_SSL_VERIFY": "true",
+        "MCP_SKIP_AUTH": "true"
+      }
+    },
+    "insecure-mcp-server": {
+      "command": "python",
+      "args": ["-m", "insecure_server"],
+      "env": {
+        "API_KEY": "insecure-key-12345",
+        "SERVER_URL": "http://localhost:8080"
+      }
+    }
+  }
+}
+
