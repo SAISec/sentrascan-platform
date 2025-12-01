@@ -245,6 +245,62 @@ def _get_user_from_session(signed_cookie: str, db: Session):
 # Simple API key and role enforcement (MVP)
 from sentrascan.core.models import APIKey, Scan, Finding, Baseline, User, Tenant
 
+def clean_file_path(path: str) -> str:
+    """
+    Clean file path by removing cache prefixes and showing only from 'huggingface' onwards.
+    
+    Args:
+        path: File path that may contain cache prefixes
+        
+    Returns:
+        Cleaned file path starting from 'huggingface' or original path if no cleaning needed
+    """
+    if not path or not isinstance(path, str):
+        return path
+    
+    # Remove /cache/.modelaudit/cache/ prefix and show from huggingface onwards
+    if "/cache/.modelaudit/cache/" in path:
+        cache_index = path.find("/cache/.modelaudit/cache/")
+        if cache_index >= 0:
+            after_cache = path[cache_index + 25:]  # len("/cache/.modelaudit/cache/") = 25
+            # Find huggingface (case-insensitive search)
+            hf_lower = after_cache.lower()
+            if "huggingface" in hf_lower:
+                hf_index = hf_lower.find("huggingface")
+                if hf_index >= 0:
+                    # Use the same index on the original case string
+                    return after_cache[hf_index:]
+            # If no huggingface, return path after cache
+            return after_cache
+    
+    return path
+
+def clean_evidence_paths(evidence):
+    """
+    Recursively clean file paths in evidence dictionary.
+    
+    Args:
+        evidence: Evidence dict that may contain file paths
+        
+    Returns:
+        Evidence dict with cleaned paths
+    """
+    if not isinstance(evidence, dict):
+        return evidence
+    
+    cleaned = {}
+    for key, value in evidence.items():
+        if key in ["file_path", "file", "path", "location"] and isinstance(value, str):
+            cleaned[key] = clean_file_path(value)
+        elif isinstance(value, dict):
+            cleaned[key] = clean_evidence_paths(value)
+        elif isinstance(value, list):
+            cleaned[key] = [clean_evidence_paths(item) if isinstance(item, dict) else (clean_file_path(item) if isinstance(item, str) and ("/cache/.modelaudit/cache/" in item or "huggingface" in item) else item) for item in value]
+        else:
+            cleaned[key] = value
+    
+    return cleaned
+
 def get_db():
     db = SessionLocal()
     try:
@@ -1400,8 +1456,8 @@ def download_report(scan_id: str, request: Request, user_or_key=Depends(require_
                 "scanner": f.scanner,
                 "title": f.title,
                 "description": f.description,
-                "location": f.location,
-                "evidence": f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {}),
+                "location": clean_file_path(f.location) if f.location else None,
+                "evidence": clean_evidence_paths(f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {})),
                 "remediation": f.remediation,
             }
             for f in findings
@@ -2403,6 +2459,8 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
         
         # Write findings
         for f in findings:
+            # Clean location path
+            location_cleaned = clean_file_path(f.location) if f.location else ""
             writer.writerow([
                 f.id,
                 f.severity or "",
@@ -2410,7 +2468,7 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
                 f.scanner or "",
                 (f.title or "").replace("\n", " ").replace("\r", " "),
                 (f.description or "").replace("\n", " ").replace("\r", " ")[:500],  # Truncate long descriptions
-                f.location or "",
+                location_cleaned,
                 (f.remediation or "").replace("\n", " ").replace("\r", " ")[:200]  # Truncate remediation
             ])
         
@@ -2454,8 +2512,8 @@ def export_findings(scan_id: str, request: Request, user_or_key=Depends(require_
                     "scanner": f.scanner,
                     "title": f.title,
                     "description": f.description,
-                    "location": f.location,
-                    "evidence": f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {}),
+                    "location": clean_file_path(f.location) if f.location else None,
+                    "evidence": clean_evidence_paths(f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {})),
                     "remediation": f.remediation,
                 }
                 for f in findings
@@ -2509,6 +2567,51 @@ def ui_scan_detail(scan_id: str, request: Request):
         if tenant_id:
             tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
         
+        # Clean file paths in findings for display
+        cleaned_findings = []
+        for f in findings:
+            # Create a copy-like object with cleaned paths
+            cleaned_f = type('Finding', (), {
+                'id': f.id,
+                'severity': f.severity,
+                'category': f.category,
+                'scanner': f.scanner,
+                'title': f.title,
+                'description': f.description,
+                'location': clean_file_path(f.location) if f.location else None,
+                'evidence': clean_evidence_paths(f.evidence if isinstance(f.evidence, dict) else (json.loads(f.evidence) if isinstance(f.evidence, str) else {})),
+                'remediation': f.remediation,
+            })()
+            cleaned_findings.append(cleaned_f)
+        
+        # Clean file paths in scan.meta for file breakdown display
+        if scan.meta and isinstance(scan.meta, dict):
+            cleaned_meta = scan.meta.copy()
+            # Clean files_affected list
+            if "files_affected" in cleaned_meta and isinstance(cleaned_meta["files_affected"], list):
+                cleaned_meta["files_affected"] = [clean_file_path(fp) for fp in cleaned_meta["files_affected"]]
+            # Clean file_category_issues paths
+            if "file_category_issues" in cleaned_meta and isinstance(cleaned_meta["file_category_issues"], dict):
+                cleaned_file_category_issues = {}
+                for file_path, categories in cleaned_meta["file_category_issues"].items():
+                    cleaned_path = clean_file_path(file_path)
+                    cleaned_file_category_issues[cleaned_path] = categories
+                    # Also clean original_path in issues
+                    for category, issues in categories.items():
+                        if isinstance(issues, list):
+                            for issue in issues:
+                                if isinstance(issue, dict) and "original_path" in issue:
+                                    issue["original_path"] = clean_file_path(issue["original_path"])
+                cleaned_meta["file_category_issues"] = cleaned_file_category_issues
+            # Clean file_categories keys
+            if "file_categories" in cleaned_meta and isinstance(cleaned_meta["file_categories"], dict):
+                cleaned_file_categories = {}
+                for file_path, categories in cleaned_meta["file_categories"].items():
+                    cleaned_path = clean_file_path(file_path)
+                    cleaned_file_categories[cleaned_path] = categories
+                cleaned_meta["file_categories"] = cleaned_file_categories
+            scan.meta = cleaned_meta
+        
         return templates.TemplateResponse(
             "scan_detail.html",
             {
@@ -2516,7 +2619,7 @@ def ui_scan_detail(scan_id: str, request: Request):
                 "user": user,
                 "tenant": tenant,
                 "scan": scan, 
-                "findings": findings,
+                "findings": cleaned_findings,
                 "existing_baseline": existing_baseline,
                 "breadcrumb_items": breadcrumb_items
             },

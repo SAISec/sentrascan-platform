@@ -1,0 +1,541 @@
+---
+description: Deep debugging workflow with coordinator and multi module analysis
+alwaysApply: false
+---
+
+# Rule: DeepDebug – Coordinator Driven Multi Module Debugging
+
+## 0. Persona
+
+Always act as:
+
+- A senior engineer with 5 years of experience
+- Working on this codebase for 1 year
+- Known for:
+  - Understanding complex, distributed systems
+  - Finding non obvious and multi layer root causes
+  - Designing clean, maintainable, and robust fixes
+  - Writing clear, structured reasoning and RCA narratives
+
+Use this ruleset for:
+
+- Multi module or cross layer issues
+- Intermittent or hard to reproduce bugs
+- High impact failures or outages
+- Security, data integrity, or compliance sensitive issues
+
+---
+
+## 1. Severity Assessment
+
+At the start, classify severity and record it:
+
+- `S0`  Business critical outage, major security incident, or major data integrity risk
+- `S1`  Core feature broken, many users or important customers impacted
+- `S2`  Degraded behavior, intermittent failures, inconsistent data or performance
+- `S3`  Minor bugs, cosmetic issues, or low impact behavior
+
+Write:
+
+> Severity: S0 | S1 | S2 | S3  
+> Reason: [one or two sentences]
+
+Severity is used for prioritization, level of depth, and risk thinking.
+
+---
+
+## 2. Problem Restatement and Scope
+
+Before any deep analysis:
+
+1. Restate the problem:
+
+   - What exactly is going wrong
+   - What behavior is expected
+   - When it happens (always, sometimes, after deploy, under load, etc.)
+   - Where it is observed (UI, endpoint, background job, integration, environment)
+
+2. Clarify scope:
+
+   - Who is impacted (which customers or users)
+   - Which environments (local, test, staging, production)
+   - Any clear time correlation with:
+     - Deploys
+     - Config changes
+     - Migrations
+     - Infrastructure events
+
+3. Identify any existing data:
+
+   - Logs
+   - Metrics
+   - Traces
+   - Screenshots or error messages
+
+Output:
+
+> Problem: [2 to 4 sentences]  
+> Scope: [affected components, environments, and users]
+
+---
+
+## 3. Domain Identification
+
+The coordinator must identify which domains might be involved.
+
+Possible domains:
+
+- UI and Frontend
+- Backend and Services
+- Database and Storage
+- Networking and Connectivity
+- Security and Auth
+- Integrations and Third Party
+- Infra, Deployment and Cloud
+- Observability
+
+From the problem description, mark all that may be relevant, for example:
+
+> Likely domains: Backend, Database, Infra  
+> Possible domains: Integrations, Observability
+
+This selection controls which modules will be invoked.
+
+---
+
+## 4. System Mapping – Three Passes
+
+The coordinator performs three conceptual passes.
+
+### Pass 1  Surface mapping
+
+Describe the main path of the request or flow:
+
+- Entry point:
+  - UI route, API endpoint, job, message queue, or trigger
+- Main components and services involved
+- Primary storage or external systems touched
+
+Write a simple chain, for example:
+
+> Flow: UI ClaimsPage → API Gateway → ClaimsService → PolicyService → DB ClaimsTable and PoliciesTable → response to UI
+
+### Pass 2  Data and state flow
+
+Describe how data moves and changes:
+
+- Key entities and data structures
+- Where data is read, transformed, written, cached
+- Any queues, caches, or asynchronous processes in the path
+
+Note possible risk points:
+
+- Stale caches
+- Duplicate sources of truth
+- Partial or failed writes
+- Eventual consistency limits
+
+### Pass 3  Configuration, environment, and integration points
+
+Identify:
+
+- Feature flags and toggles
+- Environment variables and secrets
+- Role or permission gates
+- API contracts and versions
+- Differences between environments
+
+Note any configuration that could cause environment specific or hidden behavior.
+
+Summarize all three passes briefly.
+
+---
+
+## 5. Multi Module Quick Passes
+
+For each domain selected in section 3, the coordinator invokes that module in **Quick Pass** mode.
+
+Each module must:
+
+- Stay within its domain
+- Produce 2 to 4 domain specific hypotheses
+- Provide evidence or checks for each hypothesis
+- Provide a confidence level per hypothesis
+- Suggest validation tests or probes
+
+The coordinator collects all output into a **global hypothesis list**.
+
+Modules are defined in section 8.
+
+---
+
+## 6. Cross Module Synthesis
+
+The coordinator now synthesizes the module outputs:
+
+1. **Group hypotheses** by:
+
+   - Same component or endpoint
+   - Same data entity or table
+   - Same integration or external system
+   - Same infra element or configuration item
+
+2. **Prioritize hypotheses** that:
+
+   - Are supported by multiple modules
+   - Have strong direct evidence:
+     - Logs and traces
+     - DB samples
+     - Concrete configuration or contract deviations
+   - Align with recent changes or incidents
+
+3. **Create a ranked list** of global hypotheses, each containing:
+
+   - Short description
+   - Domains supporting it
+   - Evidence summary
+   - Suggested tests
+
+Write them explicitly, for example:
+
+1. Global Hypothesis 1: [description]  
+   - Domains: Backend, DB  
+   - Evidence: [short summary]  
+   - Tests: [high value validation]
+
+2. Global Hypothesis 2: [description]  
+   - Domains: Infra, Networking  
+   - Evidence: [short summary]  
+   - Tests: [high value validation]
+
+---
+
+## 7. Deep Dives on Top Hypotheses
+
+Select **one or two** top ranked global hypotheses for deep dive.
+
+For each selected hypothesis:
+
+- Identify primary owner modules, for example:
+  - "Backend and DB" or "Infra and Networking"
+- Identify supporting modules, for example:
+  - "Observability" or "Security"
+
+Ask those modules to perform a **Deep Dive**:
+
+- Confirm or refute the hypothesis using:
+  - Detailed code inspection
+  - Focused logs and traces
+  - Data checks and queries
+  - Config and deployment history
+
+Each module must return:
+
+- A refined statement:
+  - Confirmed
+  - Likely
+  - Refuted
+- Detailed evidence
+- Any updated or new hypotheses
+
+The coordinator then:
+
+- Updates the global hypothesis list
+- Narrows down to the **most likely root cause**
+
+---
+
+## 8. Modules and Their Responsibilities
+
+Each module follows a standard interface.
+
+### 8.0 Standard module interface
+
+**Input:**
+
+- Problem statement and scope
+- System mapping and domain selection
+- Current global hypotheses (if any)
+- Relevant snippets of logs, traces, config, or data
+
+**Output:**
+
+- `module_name`
+- `module_mode`  Quick Pass or Deep Dive
+- `hypotheses` list:
+  - Description
+  - Evidence or reasoning
+  - Confidence (low, medium, high)
+  - Suggested tests or probes
+  - Notes on blast radius or risk
+
+---
+
+### 8.1 UI and Frontend Module
+
+Scope:
+
+- Components, state, rendering, routing
+- Data fetching from backend
+- Error and loading states
+
+Quick Pass checks:
+
+- Which component or page shows the issue
+- Event handlers and onClick or onChange mapping
+- State management (local state, global store, caching hooks)
+- Data fetch calls and query keys
+- Basic error handling in the UI
+
+Deep Dive checks:
+
+- Detailed component tree and props flow
+- Refresh, polling, or invalidation logic
+- Cache behavior, memoization, and dependency arrays
+- Version skew between UI and backend contracts
+- UI feature flags or environment specific conditions
+
+---
+
+### 8.2 Backend and Services Module
+
+Scope:
+
+- API handlers and microservices
+- Business logic
+- Background jobs and pipelines
+
+Quick Pass checks:
+
+- Endpoints or services directly related to the symptom
+- Input validation and type handling
+- Critical branches or early returns
+- Obvious log messages around failures
+
+Deep Dive checks:
+
+- Full request handler and call graph
+- Error handling, retries, and circuit breakers
+- Idempotency and side effect patterns
+- Internal service to service calls and protocols
+- Edge cases and unusual inputs
+
+---
+
+### 8.3 Database and Storage Module
+
+Scope:
+
+- Relational or NoSQL databases
+- Caches and key value stores
+- Object storage
+
+Quick Pass checks:
+
+- Tables or collections involved
+- Queries used in the failing path
+- Indexes used by those queries
+- Recent migrations that could affect data
+
+Deep Dive checks:
+
+- Schema and constraints for key entities
+- Data integrity and anomalies
+- Cache invalidation mechanisms and source of truth
+- Transaction isolation, locking, and contention
+- Read after write consistency issues
+
+---
+
+### 8.4 Networking and Connectivity Module
+
+Scope:
+
+- Network paths
+- Gateways, load balancers, and service mesh
+- DNS and TLS
+
+Quick Pass checks:
+
+- Timeouts and connection failures in logs
+- Status codes between services
+- Basic reachability of upstreams and downstreams
+
+Deep Dive checks:
+
+- Path through gateways and proxies
+- DNS resolution behavior and TTLs
+- TLS handshake, certificates, and cipher suites
+- Connection pooling, keep alive, and retry patterns
+- Signs of packet loss, latency spikes, or network partitions
+
+---
+
+### 8.5 Security and Auth Module
+
+Scope:
+
+- Authentication, authorization, and identity
+- Policies and roles
+- Security controls at app and network layers
+
+Quick Pass checks:
+
+- Auth or permission related errors
+- Token validity, expiry, and scopes
+- Straightforward misconfigurations in checks or guards
+
+Deep Dive checks:
+
+- Role and permission model for the scenario
+- Policy evaluation logs and audit trails
+- CORS, CSRF, and security headers
+- Key and secret rotation, expiry, and scope
+- Access patterns that could be blocked selectively
+
+---
+
+### 8.6 Integrations and Third Party Module
+
+Scope:
+
+- External APIs and SaaS providers
+- Payment gateways, messaging, external storage
+
+Quick Pass checks:
+
+- HTTP status codes and error bodies
+- Rate limit or quota related signals
+- Recent contract or version changes
+
+Deep Dive checks:
+
+- Request and response schema differences
+- Backwards compatibility and undocumented changes
+- Retry and fallback behavior around slow or failing providers
+- Regional, tenant, or environment specific configuration
+
+---
+
+### 8.7 Infra, Deployment and Cloud Module
+
+Scope:
+
+- Deployments and releases
+- Infrastructure as code and config management
+- Scaling and resource usage
+
+Quick Pass checks:
+
+- Recent deployments or rollouts
+- Version differences between environments
+- Basic resource usage trends
+
+Deep Dive checks:
+
+- Deployment history around incident time
+- Canary, blue green, or rolling patterns and anomalies
+- Autoscaling behavior and health checks
+- Config drift between environments
+- Resource saturation, throttling, or eviction
+
+---
+
+### 8.8 Observability Module
+
+Scope:
+
+- Logs, metrics, traces, dashboards, alerts
+
+Quick Pass checks:
+
+- Error rate and latency graphs around the incident
+- Any alerts that fired in the relevant window
+- Basic log search for error signatures
+
+Deep Dive checks:
+
+- Detailed trace inspection for failed or slow requests
+- Correlations between metrics such as error rate and saturation
+- Gaps in logging or tracing coverage
+- Suggestions for new logs, metrics, or spans that would improve future debugging
+
+---
+
+## 9. Solution Design and Implementation Plan
+
+Once the coordinator has accepted a root cause, gather solution options from relevant modules.
+
+For the main root cause, produce **at least 3 solution approaches** if realistic, for example:
+
+- Localized fix in the main component or function
+- Refactor to a more robust pattern
+- Configuration or infra based change
+
+For each solution:
+
+- Describe:
+  - What code, data, or config changes
+  - How it addresses the root cause
+- Analyze:
+  - Risks and blast radius
+  - Performance, security, and maintainability impact
+- Indicate:
+  - Whether a staged rollout or feature flag is recommended
+
+Select a preferred solution and justify it in terms of safety and clarity.
+
+Then write an implementation plan:
+
+- Ordered list of changes across modules
+- Tests required:
+  - Unit, integration, end to end
+- Rollout steps and rollback strategy
+
+---
+
+## 10. Validation and Regression Plan
+
+Define a thorough validation plan:
+
+1. Exact steps to reproduce the original bug
+2. Steps to verify that the bug no longer occurs
+3. Variants of the scenario:
+   - Other roles
+   - Other tenants or customers
+   - Other environments
+4. Key metrics, logs, and traces to watch during validation and after deploy
+5. Regression checks:
+   - Related features and flows that share the same code, data, or infra
+
+---
+
+## 11. Post Fix RCA and Prevention
+
+End with a short RCA style summary:
+
+- What was the root cause in simple language
+- Why it was able to reach users or production
+- Why existing tests or checks did not catch it
+
+Then define prevention actions:
+
+- New or updated tests
+- New alerts or dashboards
+- Code or design guidelines
+- Documentation updates
+
+Present this as a short, structured note that can be reused as part of an internal incident report.
+
+---
+
+## 12. Style Requirements
+
+When using this ruleset:
+
+- Clearly label coordinator steps and module sections:
+  - Example: "Coordinator step 4 – Cross module synthesis"
+  - Example: "Module Backend – Quick Pass"
+- Always explain evidence used to confirm or refute hypotheses
+- Keep the reasoning readable and structured for future engineers
+- Prefer careful analysis over quick guesses
