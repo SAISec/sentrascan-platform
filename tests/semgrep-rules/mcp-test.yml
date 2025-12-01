@@ -1,0 +1,113 @@
+rules:
+  # Detect dangerous eval usage
+  - id: mcp-test-eval-on-input
+    languages: [python]
+    message: "Use of eval() in test MCP server - RCE risk"
+    severity: ERROR
+    pattern: eval($X)
+
+  # Detect dangerous exec usage
+  - id: mcp-test-exec-on-input
+    languages: [python]
+    message: "Use of exec() in test MCP server - RCE risk"
+    severity: ERROR
+    pattern: exec($X)
+
+  # Detect pickle.loads which can lead to RCE
+  - id: mcp-test-pickle-loads
+    languages: [python]
+    message: "Use of pickle.loads() in test MCP server - RCE risk"
+    severity: ERROR
+    pattern: pickle.loads($X)
+
+  # Detect insecure HTTP without TLS verification
+  - id: mcp-test-insecure-requests-verify-false
+    languages: [python]
+    message: "requests.get/post with verify=False (insecure TLS) in test MCP server"
+    severity: WARNING
+    pattern-either:
+      - pattern: requests.get(..., verify=False, ...)
+      - pattern: requests.post(..., verify=False, ...)
+      - pattern: requests.put(..., verify=False, ...)
+      - pattern: requests.delete(..., verify=False, ...)
+
+  # Detect SQL injection patterns
+  - id: mcp-test-sql-injection-fstring
+    languages: [python]
+    message: "SQL query with f-string interpolation - SQL injection risk"
+    severity: ERROR
+    pattern: |
+      $QUERY = f"SELECT ... $VAR ..."
+      ...
+      cursor.execute($QUERY)
+
+  - id: mcp-test-sql-injection-format
+    languages: [python]
+    message: "SQL query with string formatting - SQL injection risk"
+    severity: ERROR
+    pattern: |
+      $QUERY = "... %s ..." % $VAR
+      ...
+      cursor.execute($QUERY)
+
+  # Detect command injection
+  - id: mcp-test-command-injection-subprocess
+    languages: [python]
+    message: "subprocess.run with shell=True and user input - command injection risk"
+    severity: ERROR
+    pattern: subprocess.run(f"... $VAR ...", shell=True)
+
+  - id: mcp-test-command-injection-os-system
+    languages: [python]
+    message: "os.system with user input - command injection risk"
+    severity: ERROR
+    pattern: os.system(f"... $VAR ...")
+
+  # Detect SSRF patterns
+  - id: mcp-test-ssrf-requests
+    languages: [python]
+    message: "requests.get/post with user-controlled URL - SSRF risk"
+    severity: WARNING
+    pattern-either:
+      - pattern: requests.get($URL)
+      - pattern: requests.post($URL, ...)
+      - pattern: requests.put($URL, ...)
+      - pattern: urllib.request.urlopen($URL)
+
+  # Detect LFI patterns
+  - id: mcp-test-lfi-open
+    languages: [python]
+    message: "open() with user-controlled path - LFI risk"
+    severity: WARNING
+    pattern: open($PATH, ...)
+
+  # Detect Zip Slip
+  - id: mcp-test-zip-slip
+    languages: [python]
+    message: "zipfile.extractall without path validation - Zip Slip risk"
+    severity: ERROR
+    pattern: |
+      with zipfile.ZipFile($ZIP, 'r') as $Z:
+        $Z.extractall($DEST)
+
+  # Detect weak cryptography
+  - id: mcp-test-weak-crypto-md5
+    languages: [python]
+    message: "Use of MD5 hash - weak cryptography"
+    severity: WARNING
+    pattern: hashlib.md5(...)
+
+  - id: mcp-test-weak-crypto-sha1
+    languages: [python]
+    message: "Use of SHA1 hash - weak cryptography"
+    severity: WARNING
+    pattern: hashlib.sha1(...)
+
+  # Detect insecure random
+  - id: mcp-test-insecure-random
+    languages: [python]
+    message: "Use of random instead of secrets - insecure random"
+    severity: WARNING
+    pattern: random.randint(...)
+
+

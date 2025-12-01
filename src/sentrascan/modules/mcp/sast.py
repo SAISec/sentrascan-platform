@@ -19,16 +19,29 @@ class SASTRunner:
         self.custom_rules_dir = custom_rules_dir
 
     def available(self) -> bool:
+        """
+        Check if Semgrep is available.
+        
+        Semgrep requires Python shared libraries (libpython3.11.so.1.0) which are
+        now copied into the distroless container from the builder stage.
+        """
         try:
-            subprocess.run(["semgrep", "--version"], capture_output=True, text=True, check=False)
-            return True
-        except FileNotFoundError:
+            proc = subprocess.run(["semgrep", "--version"], capture_output=True, text=True, timeout=5)
+            # Check if semgrep actually ran (not just missing library error)
+            if proc.returncode == 0:
+                return True
+            # If returncode is 127 (command not found) or stderr contains library errors, semgrep is not available
+            if proc.returncode == 127 or "error while loading shared libraries" in (proc.stderr or ""):
+                return False
+            # Other return codes might indicate semgrep exists but has issues
+            return False
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
     def run(self, repo_path: str, include_globs: List[str] | None = None, timeout: int = 180) -> List[Dict[str, Any]]:
         if not os.path.isdir(repo_path):
             return []
-        args = ["semgrep", "--json", "--timeout", str(timeout)]
+        args = ["semgrep", "--json", "--timeout", str(timeout), "--error", "--no-git-ignore"]
         for cfg in self.DEFAULT_CONFIGS:
             args += ["--config", cfg]
         if self.custom_rules_dir and os.path.isdir(self.custom_rules_dir):
@@ -37,8 +50,13 @@ class SASTRunner:
             for g in include_globs:
                 args += ["--include", g]
         args += [repo_path]
-        proc = subprocess.run(args, capture_output=True, text=True)
+        import structlog
+        logger = structlog.get_logger()
+        logger.info("semgrep_command", cmd=" ".join(args), repo_path=repo_path)
+        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        logger.info("semgrep_output", returncode=proc.returncode, stdout_length=len(proc.stdout or ""), stderr_length=len(proc.stderr or ""), stderr_preview=(proc.stderr or "")[:500])
         if proc.returncode not in (0, 1):  # 1==findings
+            logger.warning("semgrep_failed", returncode=proc.returncode, stderr=(proc.stderr or "")[:500])
             return []
         try:
             payload = json.loads(proc.stdout or "{}")

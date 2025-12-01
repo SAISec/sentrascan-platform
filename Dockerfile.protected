@@ -14,7 +14,8 @@ RUN pip wheel --no-cache-dir mcp-checkpoint cisco-ai-mcp-scanner -w /wheels
 # ============================================
 # Stage 2: Compile source to bytecode and install
 # ============================================
-FROM python:3.11-slim AS builder
+# Use Debian 12 (bookworm) to match distroless python3-debian12 base for GLIBC compatibility
+FROM python:3.11-slim-bookworm AS builder
 WORKDIR /build
 
 # Build-time container access key (set during build)
@@ -110,6 +111,12 @@ COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/python* \
     /usr/local/bin/
 
+# Copy Python shared libraries required by Semgrep and other Python tools
+# Semgrep requires libpython3.11.so.1.0 which is not included in distroless base
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/lib/libpython3.11.so* \
+    /usr/local/lib/
+
 # Copy sentrascan CLI entry point
 COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/sentrascan \
@@ -130,10 +137,13 @@ COPY --from=builder --chown=nonroot:nonroot \
     /build/docs \
     /app/docs
 
-# Copy system tools (gitleaks, trufflehog)
+# Copy system tools (gitleaks, trufflehog, semgrep, MCP scanners)
 COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/gitleaks \
     /usr/local/bin/trufflehog \
+    /usr/local/bin/semgrep \
+    /usr/local/bin/mcp-checkpoint \
+    /usr/local/bin/mcp-scanner \
     /usr/local/bin/
 # Note: git is not available in distroless image
 # Repo cloning will use Python requests to download zip archives instead
@@ -150,6 +160,8 @@ ENV CONTAINER_ACCESS_KEY=${CONTAINER_ACCESS_KEY}
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/usr/local/bin:${PATH}"
+# Set LD_LIBRARY_PATH to ensure Semgrep can find Python shared libraries
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
 # Ensure application package and its dependencies are importable:
 # - /usr/local/lib/python3.11/site-packages (copied from builder)
 # - /app/src (compiled bytecode tree)
@@ -158,6 +170,7 @@ ENV DATABASE_URL=postgresql+psycopg2://sentrascan:changeme@db:5432/sentrascan
 # Use writable volume locations for logs and telemetry in protected image
 ENV LOG_DIR=/data/logs
 ENV TELEMETRY_DIR=/data/telemetry
+ENV SENTRASCAN_SEMGREP_RULES=/app/tests/semgrep-rules
 
 # Writable volumes (read-only filesystem except these)
 VOLUME ["/data", "/reports", "/sboms", "/cache"]

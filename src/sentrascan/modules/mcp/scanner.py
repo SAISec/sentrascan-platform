@@ -299,11 +299,23 @@ class MCPScanner:
                         else:
                             logger.warning("mcp_scan_repo_clone_failed", url=p)
                         continue
-                    # Otherwise treat as JSON config file
+                    # Otherwise treat as JSON config file or directory containing mcp.json
+                    config_file = None
                     if os.path.isfile(p):
-                        actual_config_paths.append(p)
+                        config_file = p
+                    elif os.path.isdir(p):
+                        # Look for mcp.json in the directory
+                        potential_config = os.path.join(p, "mcp.json")
+                        if os.path.isfile(potential_config):
+                            config_file = potential_config
+                            logger.info("mcp_scan_found_config_in_dir", dir=p, config_file=config_file)
+                        # Also add directory itself as a potential repo path
+                        repo_paths.append(p)
+                    
+                    if config_file:
+                        actual_config_paths.append(config_file)
                         try:
-                            with open(p, "r", encoding="utf-8", errors="ignore") as fh:
+                            with open(config_file, "r", encoding="utf-8", errors="ignore") as fh:
                                 cfg = json.load(fh)
                             servers = (cfg or {}).get("mcpServers") or {}
                             for name, s in servers.items():
@@ -320,7 +332,67 @@ class MCPScanner:
                                             repo_paths.append(rp)
                                     elif isinstance(a, str) and a.startswith("/") and os.path.isdir(a):
                                         repo_paths.append(a)
-                        except Exception:
+
+                                # Heuristic: synthetic findings for insecure MCP config env vars
+                                env = s.get("env") or {}
+                                if isinstance(env, dict):
+                                    for env_name, env_value in env.items():
+                                        if not isinstance(env_value, str):
+                                            continue
+                                        location = clean_file_path(config_file)
+                                        # Insecure endpoints over cleartext protocols
+                                        if env_value.startswith(("http://", "ws://")):
+                                            severity = "MEDIUM"
+                                            cat = "Config.InsecureEndpoint"
+                                            title = f"Insecure endpoint in env var {env_name}"
+                                            description = f"Environment variable {env_name} uses insecure protocol: {env_value}"
+                                            issue = {
+                                                "title": title,
+                                                "severity": severity,
+                                                "description": description,
+                                                "location": location,
+                                            }
+                                            track_file_issue(location, cat, issue)
+                                            db.add(Finding(
+                                                scan_id=scan.id,
+                                                module="mcp",
+                                                scanner="sentrascan-mcpcheck",
+                                                severity=severity,
+                                                category=cat,
+                                                title=title,
+                                                description=description,
+                                                location=location,
+                                                evidence={"env_name": env_name, "env_value": env_value},
+                                                tenant_id=tenant_id,
+                                            ))
+                                        # Secret-like env vars (API keys, tokens, secrets)
+                                        upper_name = env_name.upper()
+                                        if any(tok in upper_name for tok in ["KEY", "SECRET", "TOKEN", "PASSWORD"]) or any(sig in env_value for sig in ["sk_live_", "AKIA", "ghp_"]):
+                                            severity = "MEDIUM"
+                                            cat = "Config.SecretEnvVar"
+                                            title = f"Potential secret in env var {env_name}"
+                                            description = "Environment variable appears to contain a secret-like value."
+                                            issue = {
+                                                "title": title,
+                                                "severity": severity,
+                                                "description": description,
+                                                "location": location,
+                                            }
+                                            track_file_issue(location, cat, issue)
+                                            db.add(Finding(
+                                                scan_id=scan.id,
+                                                module="mcp",
+                                                scanner="sentrascan-mcpyara",
+                                                severity=severity,
+                                                category=cat,
+                                                title=title,
+                                                description=description,
+                                                location=location,
+                                                evidence={"env_name": env_name, "env_value": env_value},
+                                                tenant_id=tenant_id,
+                                            ))
+                        except Exception as e:
+                            logger.warning("mcp_scan_config_parse_failed", config_file=config_file, error=str(e))
                             pass
             except Exception:
                 pass
@@ -330,17 +402,20 @@ class MCPScanner:
             try:
                 if actual_config_paths:
                     import tempfile
-                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json", dir="/cache")
                     tmp_path = tmp.name
                     tmp.close()
                     args = ["mcp-checkpoint", "scan", "--report-type", "json", "--output", tmp_path]
                     for p in actual_config_paths:
                         args += ["--config", p]
-                    subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                    logger.info("mcp_checkpoint_command", cmd=" ".join(args), config_paths=actual_config_paths)
+                    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+                    logger.info("mcp_checkpoint_output", returncode=proc.returncode, stdout_length=len(proc.stdout or ""), stderr_length=len(proc.stderr or ""), stderr_preview=(proc.stderr or "")[:500])
                     try:
                         with open(tmp_path, "r") as f:
                             data = json.load(f)
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("mcp_checkpoint_parse_failed", error=str(e), tmp_path=tmp_path)
                         data = {"findings": []}
                     try:
                         os.unlink(tmp_path)
@@ -373,8 +448,14 @@ class MCPScanner:
                     combined = {"findings": []}
                     for p in actual_config_paths:
                         args = ["mcp-scanner", "--config-path", p, "--analyzers", "yara", "--format", "raw"]
+                        logger.info("mcp_scanner_yara_command", cmd=" ".join(args), config_path=p)
                         out = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
-                        payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
+                        logger.info("mcp_scanner_yara_output", returncode=out.returncode, stdout_length=len(out.stdout or ""), stderr_length=len(out.stderr or ""), stderr_preview=(out.stderr or "")[:500])
+                        try:
+                            payload = json.loads(out.stdout) if out.stdout.strip() else {"findings": []}
+                        except json.JSONDecodeError as e:
+                            logger.warning("mcp_scanner_yara_parse_failed", error=str(e), stdout_preview=(out.stdout or "")[:500])
+                            payload = {"findings": []}
                         # Normalize payload to expected structure
                         if isinstance(payload, dict) and "findings" in payload:
                             pass
@@ -490,6 +571,9 @@ class MCPScanner:
                 pass
 
             # Run SAST (Semgrep) if available
+            # NOTE: Semgrep requires Python shared libraries (libpython3.11.so.1.0) which
+            # are not available in distroless containers. Semgrep will gracefully skip
+            # if unavailable. See docs/semgrep-distroless-limitation.md for details.
             try:
                 srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
                 if srunner.available():
@@ -533,9 +617,9 @@ class MCPScanner:
                                 remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
                             tenant_id=tenant_id,
                         ))
-                    logger.info("mcp_scan_regex_rules_completed", repo_path=rp, findings_count=findings_count)
+                    logger.info("mcp_scan_semgrep_completed", repo_path=rp, findings_count=len([sf for sf in srunner.run(rp, include_globs=["**/*.py"])]))
             except Exception as e:
-                logger.error("mcp_scan_regex_rules_failed", error=str(e), exc_info=True)
+                logger.error("mcp_scan_semgrep_failed", error=str(e), exc_info=True)
                 pass
 
             # Handshake-like probe (static parsing of Tool defs)

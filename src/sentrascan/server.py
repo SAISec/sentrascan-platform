@@ -2329,8 +2329,11 @@ def list_all_findings(
     # Require tenant context
     tenant_id = require_tenant(request, db)
     
-    query = db.query(Finding).join(Scan)
-    # Filter by tenant_id
+    # Join with Scan to ensure tenant isolation via scan.tenant_id
+    # Also filter findings by tenant_id for defense in depth
+    query = db.query(Finding).join(Scan, Finding.scan_id == Scan.id)
+    # Filter by scan's tenant_id (primary) and finding's tenant_id (secondary)
+    query = query.filter(Scan.tenant_id == tenant_id)
     query = filter_by_tenant(query, Finding, tenant_id)
     
     # Apply filters
