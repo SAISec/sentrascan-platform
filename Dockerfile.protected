@@ -92,6 +92,15 @@ RUN python -m compileall -b /build/src && \
 # Install package (will use bytecode)
 RUN pip install --no-cache-dir -e .
 
+# Create Semgrep wrapper script for distroless container
+# The semgrep binary shebang may point to distroless base Python which lacks modules
+# This wrapper explicitly uses the builder's Python which has all required modules
+RUN echo '#!/usr/local/bin/python3' > /usr/local/bin/semgrep-wrapper && \
+    echo 'import sys' >> /usr/local/bin/semgrep-wrapper && \
+    echo 'from semgrep.console_scripts.entrypoint import main' >> /usr/local/bin/semgrep-wrapper && \
+    echo 'sys.exit(main())' >> /usr/local/bin/semgrep-wrapper && \
+    chmod +x /usr/local/bin/semgrep-wrapper
+
 # Create runtime directories
 RUN mkdir -p /data /reports /sboms /cache
 
@@ -100,6 +109,8 @@ RUN mkdir -p /data /reports /sboms /cache
 # ============================================
 FROM gcr.io/distroless/python3-debian12:nonroot
 WORKDIR /app
+
+# Note: We cannot use RUN in distroless, so Semgrep wrapper will be created in builder stage
 
 # Copy Python packages and bytecode
 COPY --from=builder --chown=nonroot:nonroot \
@@ -137,14 +148,22 @@ COPY --from=builder --chown=nonroot:nonroot \
     /build/docs \
     /app/docs
 
-# Copy system tools (gitleaks, trufflehog, semgrep, MCP scanners)
+# Copy system tools (gitleaks, trufflehog, semgrep wrapper, MCP scanners)
 COPY --from=builder --chown=nonroot:nonroot \
     /usr/local/bin/gitleaks \
     /usr/local/bin/trufflehog \
-    /usr/local/bin/semgrep \
+    /usr/local/bin/semgrep-wrapper \
     /usr/local/bin/mcp-checkpoint \
     /usr/local/bin/mcp-scanner \
     /usr/local/bin/
+
+# Create symlink so 'semgrep' command uses the wrapper
+# Note: We cannot use RUN in distroless, so we copy a pre-created symlink or use wrapper directly
+# For now, we'll update the code to use semgrep-wrapper or create the symlink in a different way
+# Actually, let's just copy the wrapper as 'semgrep' to override the original
+COPY --from=builder --chown=nonroot:nonroot \
+    /usr/local/bin/semgrep-wrapper \
+    /usr/local/bin/semgrep
 # Note: git is not available in distroless image
 # Repo cloning will use Python requests to download zip archives instead
 

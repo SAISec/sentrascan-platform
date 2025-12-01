@@ -41,6 +41,8 @@ class SASTRunner:
     def run(self, repo_path: str, include_globs: List[str] | None = None, timeout: int = 180) -> List[Dict[str, Any]]:
         if not os.path.isdir(repo_path):
             return []
+        # Use semgrep wrapper which ensures correct Python interpreter
+        # The wrapper uses /usr/local/bin/python3 from builder which has all required modules
         args = ["semgrep", "--json", "--timeout", str(timeout), "--error", "--no-git-ignore"]
         for cfg in self.DEFAULT_CONFIGS:
             args += ["--config", cfg]

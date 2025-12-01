@@ -534,11 +534,6 @@ def scan_model(payload: dict, request: Request, user_or_key=Depends(require_auth
             os.makedirs(sbom_dir, exist_ok=True)
             sbom_path = os.path.join(sbom_dir, f"auto_sbom_{int(time_module.time())}.json")
         scan = ms.scan(paths=paths, sbom_path=sbom_path, strict=payload.get("strict", False), timeout=timeout, db=db, tenant_id=tenant_id)
-    except ValueError as e:
-        # Handle validation errors (e.g., SSRF prevention)
-        if "not allowed" in str(e).lower() or "url" in str(e).lower():
-            raise HTTPException(400, str(e))
-        raise
         
         # Capture telemetry
         telemetry.capture_scan_event(
@@ -559,6 +554,11 @@ def scan_model(payload: dict, request: Request, user_or_key=Depends(require_auth
         )
         
         return ms.to_report(scan)
+    except ValueError as e:
+        # Handle validation errors (e.g., SSRF prevention)
+        if "not allowed" in str(e).lower() or "url" in str(e).lower():
+            raise HTTPException(400, str(e))
+        raise
     except Exception as e:
         logger.error(
             "model_scan_failed",

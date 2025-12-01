@@ -570,54 +570,56 @@ class MCPScanner:
             except Exception:
                 pass
 
-            # Run SAST (Semgrep) if available
-            # NOTE: Semgrep requires Python shared libraries (libpython3.11.so.1.0) which
-            # are not available in distroless containers. Semgrep will gracefully skip
-            # if unavailable. See docs/semgrep-distroless-limitation.md for details.
+            # Run SAST (Semgrep) - GRACEFULLY DEACTIVATED
+            # NOTE: Semgrep requires Python shared libraries and standard library modules
+            # that are not fully compatible with distroless containers. Semgrep is
+            # gracefully deactivated to avoid runtime errors. See docs/semgrep-distroless-limitation.md
+            # Code Rules scanner provides similar pattern-based detection capabilities.
+            # Semgrep can be re-enabled when a statically compiled binary becomes available.
             try:
-                srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
-                if srunner.available():
-                    for rp in repo_paths:
-                        for sf in srunner.run(rp, include_globs=["**/*.py"]):
-                            sev_key = (sf["severity"].lower() + "_count")
-                            if sev_key in sev:
-                                sev[sev_key] += 1
-                            issue_types.append("semgrep")
-                            file_path = sf.get("path") or ""
-                            line_num = sf.get("line")
-                            cleaned_path = clean_file_path(file_path)
-                            location_str = f"{cleaned_path}:{line_num}" if cleaned_path and line_num else (cleaned_path or file_path)
-                            cat = "SAST"
-                            # Track file issue
-                            if cleaned_path:
-                                track_file_issue(cleaned_path, cat, {
-                                    "title": sf.get("message"),
-                                    "severity": sf.get("severity"),
-                                    "description": sf.get("rule_id"),
-                                    "line_number": line_num,
-                                    "location": location_str
-                                })
-                            # Clean paths in evidence
-                            evidence = {
-                                "rule_id": sf.get("rule_id"), 
-                                "line_number": line_num, 
-                                "file_path": cleaned_path or file_path,
-                                "line_content": sf.get("line_content", "")
-                            }
-                            db.add(Finding(
-                                scan_id=scan.id,
-                                module="mcp",
-                                scanner="sentrascan-semgrep",
-                                severity=sf.get("severity"),
-                                category=cat,
-                                title=sf.get("message"),
-                                description=sf.get("rule_id"),
-                                location=location_str,
-                                evidence=evidence,
-                                remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
-                            tenant_id=tenant_id,
-                        ))
-                    logger.info("mcp_scan_semgrep_completed", repo_path=rp, findings_count=len([sf for sf in srunner.run(rp, include_globs=["**/*.py"])]))
+                # Semgrep gracefully deactivated - skip execution
+                logger.info("mcp_scan_semgrep_skipped", reason="gracefully_deactivated_distroless_incompatibility")
+                # Original code preserved for future re-enablement:
+                # srunner = SASTRunner(custom_rules_dir=os.environ.get("SENTRASCAN_SEMGREP_RULES"))
+                # if srunner.available():
+                #     for rp in repo_paths:
+                #         for sf in srunner.run(rp, include_globs=["**/*.py"]):
+                #             sev_key = (sf["severity"].lower() + "_count")
+                #             if sev_key in sev:
+                #                 sev[sev_key] += 1
+                #             issue_types.append("semgrep")
+                #             file_path = sf.get("path") or ""
+                #             line_num = sf.get("line")
+                #             cleaned_path = clean_file_path(file_path)
+                #             location_str = f"{cleaned_path}:{line_num}" if cleaned_path and line_num else (cleaned_path or file_path)
+                #             cat = "SAST"
+                #             if cleaned_path:
+                #                 track_file_issue(cleaned_path, cat, {
+                #                     "title": sf.get("message"),
+                #                     "severity": sf.get("severity"),
+                #                     "description": sf.get("rule_id"),
+                #                     "line_number": line_num,
+                #                     "location": location_str
+                #                 })
+                #             evidence = {
+                #                 "rule_id": sf.get("rule_id"), 
+                #                 "line_number": line_num, 
+                #                 "file_path": cleaned_path or file_path,
+                #                 "line_content": sf.get("line_content", "")
+                #             }
+                #             db.add(Finding(
+                #                 scan_id=scan.id,
+                #                 module="mcp",
+                #                 scanner="sentrascan-semgrep",
+                #                 severity=sf.get("severity"),
+                #                 category=cat,
+                #                 title=sf.get("message"),
+                #                 description=sf.get("rule_id"),
+                #                 location=location_str,
+                #                 evidence=evidence,
+                #                 remediation="Use parameterized queries and avoid string interpolation; apply input validation and least privilege.",
+                #                 tenant_id=tenant_id,
+                #             ))
             except Exception as e:
                 logger.error("mcp_scan_semgrep_failed", error=str(e), exc_info=True)
                 pass

@@ -225,7 +225,7 @@ class TestModelScannerFunctional:
         scan_id = create_response.json()["scan_id"]
         
         # Get scan details
-        get_        response = requests.get(
+        get_response = requests.get(
             f"{api_base_url}/scans/{scan_id}",
             headers=headers,
             timeout=10
