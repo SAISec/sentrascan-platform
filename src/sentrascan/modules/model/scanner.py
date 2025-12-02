@@ -6,7 +6,7 @@ import tempfile
 from urllib.parse import urlparse
 import time
 from typing import List, Optional
-from sentrascan.core.models import Scan, Finding, SBOM
+from sentrascan.core.models import Scan, Finding
 from sentrascan.core.policy import PolicyEngine
 
 class ModelScanner:
@@ -63,22 +63,48 @@ class ModelScanner:
         except FileNotFoundError:
             return False, "modelaudit CLI not found; install with `pip install modelaudit`"
 
-    def scan(self, paths: List[str], sbom_path: Optional[str], strict: bool, timeout: int, db, tenant_id: Optional[str] = None):
+    def scan(
+        self,
+        paths: List[str],
+        sbom_path: Optional[str],
+        strict: bool,
+        timeout: int,
+        db,
+        tenant_id: Optional[str] = None,
+        existing_scan: Optional[Scan] = None,
+    ):
         start = time.time()
         scan = None
         try:
             # Validate paths to avoid SSRF and remote fetches via subprocess
             paths = self._validate_paths(paths or [])
             
-            # Create scan record with "in_progress" status at the start
-            scan = Scan(
-                scan_type="model",
-                target_path=",".join(paths),
-                scan_status="in_progress",  # Scan is actively running
-                tenant_id=tenant_id,
-            )
-            db.add(scan)
-            db.flush()  # Flush to get scan.id
+            # Either reuse existing scan row (for async UI/JobRunner) or create a new one
+            if existing_scan is not None:
+                scan = existing_scan
+                scan.scan_type = "model"
+                scan.target_path = ",".join(paths)
+                scan.scan_status = "in_progress"  # Scan is actively running
+                # Reset counters for a fresh run
+                scan.total_findings = 0
+                scan.critical_count = 0
+                scan.high_count = 0
+                scan.medium_count = 0
+                scan.low_count = 0
+                # Ensure tenant_id is set
+                if tenant_id and not scan.tenant_id:
+                    scan.tenant_id = tenant_id
+                db.flush()
+            else:
+                # Create scan record with "in_progress" status at the start
+                scan = Scan(
+                    scan_type="model",
+                    target_path=",".join(paths),
+                    scan_status="in_progress",  # Scan is actively running
+                    tenant_id=tenant_id,
+                )
+                db.add(scan)
+                db.flush()  # Flush to get scan.id
             
             tmp_report = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
             tmp_report.close()
