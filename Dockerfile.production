@@ -57,6 +57,9 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
 # Copy source code only (NO tests directory)
 COPY src/ /app/src/
 
+# Copy documentation (for /docs viewer)
+COPY docs/ /app/docs/
+
 # Install the package
 RUN pip install --no-cache-dir -e .
 

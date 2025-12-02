@@ -674,12 +674,26 @@ class JobRunner(Thread):
                     tenant_id = job.get("tenant_id") or (existing.tenant_id if existing and hasattr(existing, 'tenant_id') else None)
                     pe = PolicyEngine.default_model(tenant_id=tenant_id, db=db)
                     ms = ModelScanner(policy=pe)
-                    # If existing scan, pass it to scanner; otherwise scanner creates new one
+                    # If existing scan, pass it to scanner so it updates that row; otherwise scanner creates new one
                     if existing:
-                        # Scanner will update the existing scan
-                        scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
+                        scan = ms.scan(
+                            paths=job["paths"],
+                            sbom_path=job.get("sbom_path"),
+                            strict=job.get("strict", False),
+                            timeout=job.get("timeout", 0),
+                            db=db,
+                            tenant_id=tenant_id,
+                            existing_scan=existing,
+                        )
                     else:
-                        scan = ms.scan(paths=job["paths"], sbom_path=job.get("sbom_path"), strict=job.get("strict", False), timeout=job.get("timeout", 0), db=db, tenant_id=tenant_id)
+                        scan = ms.scan(
+                            paths=job["paths"],
+                            sbom_path=job.get("sbom_path"),
+                            strict=job.get("strict", False),
+                            timeout=job.get("timeout", 0),
+                            db=db,
+                            tenant_id=tenant_id,
+                        )
                     job["on_done"](scan.id)
                 elif job["type"] == "mcp":
                     existing = db.query(Scan).filter(Scan.id == job.get("existing_scan_id")).first()

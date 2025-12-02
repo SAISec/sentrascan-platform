@@ -23,33 +23,138 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Map 7/30/90 day selector to dashboard time_range value
+function daysToTimeRange(days) {
+    if (days === 7) return '7d';
+    if (days === 30) return '30d';
+    if (days === 90) return '90d';
+    return '30d';
+}
+
 // Load all analytics data
 async function loadAnalytics() {
     try {
-        // Load all analytics endpoints in parallel
-        const [trends, severity, scanner, remediation, risk] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/analytics/trends?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/severity-distribution?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/scanner-effectiveness?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/remediation-progress?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/risk-scores?days=${currentDays}`, { credentials: 'include' }).then(r => r.json())
+        const timeRange = daysToTimeRange(currentDays);
+
+        // Use the same backend analytics the main dashboard uses
+        const [statsRes, chartsRes] = await Promise.all([
+            fetch(`${API_BASE}/api/v1/dashboard/stats?time_range=${timeRange}`, { credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/dashboard/charts?time_range=${timeRange}`, { credentials: 'include' })
         ]);
-        
+
+        if (!statsRes.ok || !chartsRes.ok) {
+            throw new Error(`Dashboard analytics HTTP error: stats=${statsRes.status}, charts=${chartsRes.status}`);
+        }
+
+        const stats = await statsRes.json();
+        const chartsData = await chartsRes.json(); // { trends, severity, passFail }
+
+        // Adapt dashboard stats -> analytics summary format
+        const trends = {
+            summary: {
+                total_scans: stats.total_scans || 0,
+                total_findings: stats.total_findings || 0,
+                // dashboard.stats.pass_rate is already a percent (0–100), but
+                // analytics.js expects 0–1; convert back to fraction
+                pass_rate: (typeof stats.pass_rate === 'number' ? stats.pass_rate / 100.0 : 0)
+            },
+            data: []
+        };
+
+        // Adapt dashboard charts.trends -> analytics trend data format
+        const trendLabels = (chartsData.trends && chartsData.trends.labels) || [];
+        const scansSeries   = (chartsData.trends && chartsData.trends.scans)   || [];
+        const passedSeries  = (chartsData.trends && chartsData.trends.passed)  || [];
+        const failedSeries  = (chartsData.trends && chartsData.trends.failed)  || [];
+
+        trends.data = trendLabels.map((label, idx) => ({
+            period: label,
+            total_findings: scansSeries[idx] || 0,   // approximate: scans per day
+            critical_count: 0,
+            high_count: 0,
+            medium_count: 0,
+            low_count: 0,
+            scan_count: scansSeries[idx] || 0,
+            passed_count: passedSeries[idx] || 0,
+            failed_count: failedSeries[idx] || 0
+        }));
+
+        // Adapt severity distribution
+        const severity = {
+            distribution: {
+                critical: chartsData.severity?.critical || 0,
+                high:     chartsData.severity?.high     || 0,
+                medium:   chartsData.severity?.medium   || 0,
+                low:      chartsData.severity?.low      || 0,
+                info:     0
+            }
+        };
+
+        // Scanner effectiveness: derive from scan_type rollups using dashboard export
+        const scanners = {};
+        try {
+            const scannerStatsRes = await fetch(
+                `${API_BASE}/api/v1/dashboard/export?format=json&time_range=${timeRange}`,
+                { credentials: 'include' }
+            );
+            if (scannerStatsRes.ok) {
+                const exportJson = await scannerStatsRes.json();
+                for (const s of exportJson.scans || []) {
+                    const key = s.type || 'unknown';
+                    if (!scanners[key]) {
+                        scanners[key] = {
+                            scan_count: 0,
+                            total_findings: 0,
+                            passed: 0,
+                            failed: 0,
+                            pass_rate: 0
+                        };
+                    }
+                    scanners[key].scan_count += 1;
+                    scanners[key].total_findings += (s.total_findings || 0);
+                    if (s.passed) scanners[key].passed += 1;
+                    else scanners[key].failed += 1;
+                }
+                Object.values(scanners).forEach(v => {
+                    v.pass_rate = v.scan_count > 0 ? (v.passed / v.scan_count) * 100.0 : 0;
+                });
+            }
+        } catch (e) {
+            console.debug('Scanner effectiveness export failed:', e);
+        }
+        const scanner = { scanners };
+
+        // Remediation progress: basic placeholder based on currently available data
+        const remediation = { by_age: { new: 0, recent: 0, old: 0 } };
+
+        // Risk scores: simple severity-weighted approximation using dashboard severity
+        const risk = {
+            by_severity: {
+                critical: (chartsData.severity?.critical || 0) * 4,
+                high:     (chartsData.severity?.high     || 0) * 3,
+                medium:   (chartsData.severity?.medium   || 0) * 2,
+                low:      (chartsData.severity?.low      || 0) * 1
+            }
+        };
+        risk.total_risk_score = Object.values(risk.by_severity).reduce((a, b) => a + b, 0);
+
         // Update summary statistics
         updateSummaryStats(trends, risk);
-        
-        // Render charts
+
+        // Render charts with adapted structures
         renderTrendChart(trends);
         renderSeverityChart(severity);
         renderScannerChart(scanner);
         renderRemediationChart(remediation);
         renderRiskChart(risk);
-        
+
         // Load ML insights if enabled
         loadMLInsights();
     } catch (error) {
         console.error('Error loading analytics:', error);
-        showToast('Failed to load analytics data', 'error');
+        if (typeof showToast === 'function') {
+            showToast('Failed to load analytics data', 'error');
+        }
     }
 }
 
