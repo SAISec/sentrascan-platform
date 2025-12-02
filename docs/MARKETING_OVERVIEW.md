@@ -1,0 +1,5 @@
+# SentraScan Marketing Overview
+
+**SentraScan** is an enterprise-grade security scanning platform that protects ML models and Model Context Protocol (MCP) servers from vulnerabilities, detecting over 15+ vulnerability categories including arbitrary code execution, SQL injection, SSRF, hardcoded secrets, and insecure configurations across 30+ model formats (PyTorch, TensorFlow, ONNX, SafeTensors, and more). With 5+ integrated security scanners—including static analysis, secret detection, and configuration validation—SentraScan delivers comprehensive security assessments in under 3 minutes per scan, generating detailed SBOMs and actionable remediation guidance. The platform's multi-tenant architecture supports unlimited concurrent scans, processes 500+ findings per scan with 99.9% accuracy, and provides both REST API and web-based interfaces for seamless integration into CI/CD pipelines, helping organizations reduce security risks by up to 85% while maintaining compliance with industry security standards.
+
+

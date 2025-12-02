@@ -1,0 +1,28 @@
+services:
+  api:
+    image: sentrascan/platform:production-gcp
+    command: sentrascan server --host 0.0.0.0 --port 8200
+    ports:
+      - "8200:8200"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - MODELAUDIT_CACHE_DIR=/cache
+    depends_on:
+      - db
+    volumes:
+      - ./data:/data
+      - ./reports:/reports
+      - ./sboms:/sboms
+      - ./cache:/cache
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=sentrascan
+      - POSTGRES_USER=sentrascan
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+volumes:
+  pg-data:
