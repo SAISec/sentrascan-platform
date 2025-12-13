@@ -23,33 +23,100 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Map 7/30/90 day selector to dashboard time_range value
+function daysToTimeRange(days) {
+    if (days === 7) return '7d';
+    if (days === 30) return '30d';
+    if (days === 90) return '90d';
+    return '30d';
+}
+
 // Load all analytics data
 async function loadAnalytics() {
     try {
-        // Load all analytics endpoints in parallel
-        const [trends, severity, scanner, remediation, risk] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/analytics/trends?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/severity-distribution?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/scanner-effectiveness?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/remediation-progress?days=${currentDays}`, { credentials: 'include' }).then(r => r.json()),
-            fetch(`${API_BASE}/api/v1/analytics/risk-scores?days=${currentDays}`, { credentials: 'include' }).then(r => r.json())
+        // Use the dedicated analytics endpoints which provide correct finding counts and severity breakdowns
+        const [trendsRes, severityRes, scannerRes, remediationRes, riskRes] = await Promise.all([
+            fetch(`${API_BASE}/api/v1/analytics/trends?days=${currentDays}&group_by=day`, { credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/analytics/severity-distribution?days=${currentDays}`, { credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/analytics/scanner-effectiveness?days=${currentDays}`, { credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/analytics/remediation-progress?days=${currentDays}`, { credentials: 'include' }),
+            fetch(`${API_BASE}/api/v1/analytics/risk-scores?days=${currentDays}`, { credentials: 'include' })
         ]);
-        
+
+        if (!trendsRes.ok || !severityRes.ok || !scannerRes.ok || !remediationRes.ok || !riskRes.ok) {
+            throw new Error(`Analytics HTTP error: trends=${trendsRes.status}, severity=${severityRes.status}, scanner=${scannerRes.status}, remediation=${remediationRes.status}, risk=${riskRes.status}`);
+        }
+
+        const trendsData = await trendsRes.json();
+        const severityData = await severityRes.json();
+        const scannerData = await scannerRes.json();
+        const remediationData = await remediationRes.json();
+        const riskData = await riskRes.json();
+
+        // Use trends data directly - it already has the correct structure with finding counts and severity breakdowns
+        const trends = {
+            summary: {
+                total_scans: trendsData.summary?.total_scans || 0,
+                total_findings: trendsData.summary?.total_findings || 0,
+                pass_rate: trendsData.summary?.pass_rate || 0  // Already 0-1 fraction
+            },
+            data: (trendsData.data || []).map(item => ({
+                period: item.period || '',
+                total_findings: item.total_findings || 0,
+                critical_count: item.critical_count || 0,
+                high_count: item.high_count || 0,
+                medium_count: item.medium_count || 0,
+                low_count: item.low_count || 0,
+                scan_count: item.scan_count || 0,
+                passed_count: item.passed_count || 0,
+                failed_count: (item.scan_count || 0) - (item.passed_count || 0)
+            }))
+        };
+
+        // Use severity distribution data directly
+        const severity = {
+            distribution: {
+                critical: severityData.distribution?.critical || 0,
+                high:     severityData.distribution?.high     || 0,
+                medium:   severityData.distribution?.medium   || 0,
+                low:      severityData.distribution?.low      || 0,
+                info:     severityData.distribution?.info     || 0
+            }
+        };
+
+        // Use scanner effectiveness data directly
+        const scanner = {
+            scanners: scannerData.scanners || {}
+        };
+
+        // Use remediation progress data directly
+        const remediation = {
+            by_age: remediationData.by_age || { new: 0, recent: 0, old: 0 }
+        };
+
+        // Use risk scores data directly
+        const risk = {
+            by_severity: riskData.by_severity || {},
+            total_risk_score: riskData.total_risk_score || 0
+        };
+
         // Update summary statistics
         updateSummaryStats(trends, risk);
-        
-        // Render charts
+
+        // Render charts with adapted structures
         renderTrendChart(trends);
         renderSeverityChart(severity);
         renderScannerChart(scanner);
         renderRemediationChart(remediation);
         renderRiskChart(risk);
-        
+
         // Load ML insights if enabled
         loadMLInsights();
     } catch (error) {
         console.error('Error loading analytics:', error);
-        showToast('Failed to load analytics data', 'error');
+        if (typeof showToast === 'function') {
+            showToast('Failed to load analytics data', 'error');
+        }
     }
 }
 
